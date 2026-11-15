@@ -1,0 +1,8 @@
+gspread>=6.1,<7
+openai>=1.40,<3
+python-dotenv>=1.0,<2
+Flask>=3.0,<4
+requests>=2.31,<3
+opencv-python-headless>=4.10,<5
+imageio-ffmpeg>=0.5,<1
+yt-dlp>=2025.1
