@@ -34,7 +34,7 @@ flowchart LR
     I -->|analysis error| X
     I --> J[Ready to Post]
     J -->|operator edits caption| J
-    J -->|status: REJECTED_BY_AYUSH| R[Rejected Reels]
+    J -->|status: configured rejection status| R[Rejected Reels]
     J -->|scheduled time| K[Meta publishing API]
     K -->|publish error| X
     K --> L[Posted Reels]
