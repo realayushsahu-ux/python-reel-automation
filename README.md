@@ -11,7 +11,7 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 - Receives Reel links from Instagram webhook events through a Cloudflare Worker relay.
 - Filters incoming events to the configured sender and destination account, then deduplicates them.
 - Downloads accessible Reels locally with `yt-dlp` and an optional signed-in Firefox session.
-- Samples six low-detail frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
+- Samples four low-detail frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
 - Makes one AI call per Reel for the caption, hashtags, an on-screen hook and a short commentary script.
 - Renders a **commentary Reel** locally in three beats: a spoken intro that teases what the clip is about, the clip with its own sound, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
 - Uses a free, natural Microsoft Edge neural voice (`TTS_ENGINE=edge`) and falls back to the offline Kokoro voice automatically.

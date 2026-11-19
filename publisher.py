@@ -209,22 +209,32 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
     if not container_id or not upload_uri:
         raise PublishError("Meta did not return the Reel container ID and upload URL")
 
-    try:
-        with video_path.open("rb") as video:
-            upload_response = requests.post(
-                upload_uri,
-                data=video,
-                headers={
-                    "Authorization": f"OAuth {token}",
-                    "offset": "0",
-                    "file_size": str(file_size),
-                    "Content-Type": "application/octet-stream",
-                },
-                timeout=180,
-            )
-        upload_response.raise_for_status()
-    except requests.RequestException as exc:
-        raise PublishError("Video upload to Meta failed") from exc
+    # Uploads fail now and then on a network or Meta hiccup; the container stays
+    # valid, so send the whole file again a few times before giving up.
+    last_problem = ""
+    for attempt in range(1, 4):
+        try:
+            with video_path.open("rb") as video:
+                upload_response = requests.post(
+                    upload_uri,
+                    data=video,
+                    headers={
+                        "Authorization": f"OAuth {token}",
+                        "offset": "0",
+                        "file_size": str(file_size),
+                        "Content-Type": "application/octet-stream",
+                    },
+                    timeout=180,
+                )
+            if upload_response.ok:
+                break
+            last_problem = f"HTTP {upload_response.status_code}: {upload_response.text[:200]}"
+        except requests.RequestException as exc:
+            last_problem = type(exc).__name__
+        print(f"Row {row_number}: upload attempt {attempt} failed ({last_problem}); retrying")
+        time.sleep(10 * attempt)
+    else:
+        raise PublishError(f"Video upload to Meta failed after 3 attempts ({last_problem})"[:400])
 
     status = ""
     for _ in range(POLL_ATTEMPTS):

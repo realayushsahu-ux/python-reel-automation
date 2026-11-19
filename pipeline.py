@@ -688,7 +688,7 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
     """One AI call per Reel: caption, hashtags, on-screen hook, spoken intro and spoken ending."""
     client = ai_client()
     detail = setting("AI_IMAGE_DETAIL", "low").lower()
-    frame_count = max(2, int(setting("AI_FRAME_COUNT", "6") or 6))
+    frame_count = max(2, int(setting("AI_FRAME_COUNT", "4") or 4))
     frames = read_video_frames(video_path, frame_count, max_width=512 if detail == "low" else 768)
     transcript = get_transcript(video_path, client)
     duration, _has_audio = reelmaker.probe(video_path)
