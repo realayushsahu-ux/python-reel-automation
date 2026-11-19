@@ -2,6 +2,8 @@
 
 **A permission-aware Instagram Reel pipeline that turns a shared Reel into a scheduled post.**
 
+**In one line:** send a Reel link in a DM, and Python does everything else (download, Hindi commentary edit, caption, schedule) and posts it at the next time slot, fully automatic.
+
 ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video processing, AI-assisted caption writing, and Instagram publishing. It is designed to keep each Reel traceable from the incoming link to its final result, while allowing the operator to edit or reject a draft before it is published.
 
 > Use this project only for Reels you have permission to repost. Instagram availability, account permissions, and platform limits can still affect downloads or publishing.

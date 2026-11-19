@@ -611,7 +611,9 @@ def ai_client() -> OpenAI:
     api_key = setting("AI_API_KEY")
     if not api_key:
         raise RuntimeError("Set AI_API_KEY in .env")
-    return OpenAI(api_key=api_key, base_url=setting("AI_BASE_URL", "https://api.openai.com/v1"))
+    # A failed request is not billed, so retrying a slow moment costs nothing extra.
+    return OpenAI(api_key=api_key, base_url=setting("AI_BASE_URL", "https://api.openai.com/v1"),
+                  timeout=float(setting("AI_TIMEOUT_SECONDS", "90") or 90), max_retries=3)
 
 
 def ask_json(client: OpenAI, messages: list[dict[str, Any]]) -> dict[str, Any]:
