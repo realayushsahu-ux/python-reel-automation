@@ -14,7 +14,7 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 - Samples four low-detail frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
 - Makes one AI call per Reel for the caption, hashtags, an on-screen hook and a short commentary script.
 - Renders a **commentary Reel** locally in three beats: a spoken intro that teases what the clip is about, the clip with its own sound, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
-- Uses a free, natural Microsoft Edge neural voice (`TTS_ENGINE=edge`) and falls back to the offline Kokoro voice automatically.
+- Voices it like a comedian, not a narrator: the AI writes short punchy beats, each sentence gets its own tone (excited, questioning), and `...` becomes a comic pause. It uses a free Microsoft Edge neural voice (`TTS_ENGINE=edge`, default Ava) and redoes a Reel with the offline Kokoro voice if Edge is down.
 - Speaks English or Hindi (`COMMENTARY_LANGUAGE=Hindi`: Hindi voice, Hinglish captions), with optional playful slang (`SLANG_LEVEL=off|mild|strong`) kept out of the hook, caption and hashtags and never used for slurs or when children are on screen.
 - Credits the original creator in the caption and invites them as a collaborator when publishing.
 - Optionally fills reserved slots with **original Reels**: an AI script and voiceover over free Pixabay or Pexels stock footage.

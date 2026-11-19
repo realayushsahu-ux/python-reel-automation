@@ -710,8 +710,10 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
             "end of the clip. React to what just happened, then ask ONE specific, easy question people will "
             "want to answer in the comments (pick a side, rate it 1-10, what would you do, tag a friend who "
             "does this). End by telling them to answer in the comments.\n"
-            "Talk like a funny friend reacting, not a narrator. No emoji, no hashtags. Do not invent facts "
-            "about the people shown and do not claim you filmed it.\n"
+            "Deliver it like a desi stand-up comedian reacting live, never like someone reading a script: "
+            "short punchy beats separated by '...' for comic timing, reactions like arre bhai, oye, haha, "
+            "exaggeration, and the punchline last. No emoji, no hashtags. Do not invent facts about the "
+            "people shown and do not claim you filmed it.\n"
             f"{language_rules()}\n{slang_rules()}\n\n"
             f"Speech heard in the clip: {transcript or '[none]'}"
         ),

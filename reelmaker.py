@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -172,6 +173,27 @@ SAMPLE_RATE = 24000
 _EDGE_FAILED = False
 
 
+def _percent(value: str, default: int) -> int:
+    match = re.fullmatch(r"\s*([+-]?\d+)\s*(%|Hz)?\s*", value or "")
+    return int(match.group(1)) if match else default
+
+
+def _prosody(text: str) -> tuple[str, str]:
+    """Edge rate and pitch for one beat, so the delivery rises and falls like a person
+    joking instead of reading: excited lines faster and higher, questions lifted."""
+    rate = _percent(setting("EDGE_RATE", "+5%"), 5)
+    pitch = _percent(setting("EDGE_PITCH", "+0Hz"), 0)
+    if setting("EXPRESSIVE_VOICE", "true").lower() not in {"0", "false", "no", "off"}:
+        ending = text.rstrip()[-1:] if text.strip() else ""
+        if ending == "!":
+            rate, pitch = rate + 12, pitch + 18
+        elif ending == "?":
+            rate, pitch = rate + 2, pitch + 12
+        else:
+            pitch += 4
+    return f"{rate:+d}%", f"{pitch:+d}Hz"
+
+
 def _speak_edge(text: str) -> np.ndarray:
     """Microsoft Edge neural voice (free, natural, needs internet). 24 kHz mono float samples."""
     import asyncio
@@ -179,10 +201,10 @@ def _speak_edge(text: str) -> np.ndarray:
     import edge_tts
 
     voice = setting("EDGE_VOICE") or ("hi-IN-MadhurNeural" if is_hindi() else "en-US-GuyNeural")
+    rate, pitch = _prosody(text)
     with tempfile.TemporaryDirectory(prefix="edge-tts-") as temp:
         mp3 = Path(temp) / "line.mp3"
-        communicate = edge_tts.Communicate(text, voice, rate=setting("EDGE_RATE", "+8%") or "+8%",
-                                           pitch=setting("EDGE_PITCH", "+0Hz") or "+0Hz")
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
         asyncio.run(communicate.save(str(mp3)))
         decoded = subprocess.run(
             [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-i", str(mp3), "-ac", "1",
@@ -196,14 +218,53 @@ def _speak_edge(text: str) -> np.ndarray:
 
 
 def speak(text: str) -> np.ndarray:
-    """One spoken line as 24 kHz samples. Edge voice first (TTS_ENGINE=edge), Kokoro as the fallback."""
+    """One spoken line, voiced beat by beat: '...' gets a comic pause, and each sentence
+    gets its own tone (see _prosody)."""
+    beats: list[tuple[str, float]] = []
+    for chunk in re.split(r"\.{3,}|…", text):
+        sentences = [s.strip() for s in re.findall(r"[^!?।]+[!?।]*", chunk) if s.strip(" .")]
+        for index, sentence in enumerate(sentences):
+            last = index == len(sentences) - 1
+            beats.append((sentence.strip(), 0.3 if last else 0.12))
+    if len(beats) < 2:
+        return _speak_one(text)
+    parts: list[np.ndarray] = []
+    for beat, pause in beats:
+        parts += [_speak_one(beat), np.zeros(int(pause * SAMPLE_RATE), dtype=np.float32)]
+    return np.concatenate(parts[:-1])
+
+
+class EdgeVoiceDown(RuntimeError):
+    pass
+
+
+def with_voice_fallback(make):
+    """Voice a whole Reel with Edge; if Edge is down, redo the whole Reel with Kokoro so
+    one video never mixes two voices. Every new Reel tries Edge again."""
     global _EDGE_FAILED
-    if setting("TTS_ENGINE", "edge").lower() == "edge" and not _EDGE_FAILED:
+    _EDGE_FAILED = False
+    try:
+        return make()
+    except EdgeVoiceDown as exc:
+        print(f"Edge voice unavailable ({exc}); this Reel uses the local Kokoro voice")
+        _EDGE_FAILED = True
         try:
-            return _speak_edge(text)
-        except Exception as exc:  # offline, service change, rate limit
-            _EDGE_FAILED = True
-            print(f"Edge voice unavailable ({type(exc).__name__}); using the local Kokoro voice")
+            return make()
+        finally:
+            _EDGE_FAILED = False
+
+
+def _speak_one(text: str) -> np.ndarray:
+    """One phrase as 24 kHz samples with the Edge voice (TTS_ENGINE=edge) or Kokoro."""
+    if setting("TTS_ENGINE", "edge").lower() == "edge" and not _EDGE_FAILED:
+        problem = ""
+        for attempt in range(3):  # brief network or service hiccups
+            try:
+                return _speak_edge(text)
+            except Exception as exc:
+                problem = type(exc).__name__
+                time.sleep(2 * (attempt + 1))
+        raise EdgeVoiceDown(problem)
     voice, lang, speed = voice_settings()
     audio, _rate = tts().create(text, voice=voice, speed=speed, lang=lang)
     return np.asarray(audio, dtype=np.float32)
@@ -397,8 +458,8 @@ def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *,
     and a spoken ending that asks viewers to comment; plus captions, hook and creator credit."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     duration, _has_audio = probe(source)
-    intro_audio, intro_cues = speak_lines(intro)
-    outro_audio, outro_cues = speak_lines(outro)
+    (intro_audio, intro_cues), (outro_audio, outro_cues) = with_voice_fallback(
+        lambda: (speak_lines(intro), speak_lines(outro)))
     lead = 0.3
     intro_end = lead + len(intro_audio) / SAMPLE_RATE
     outro_seconds = len(outro_audio) / SAMPLE_RATE
@@ -525,10 +586,10 @@ def render_original(plan: dict, out_path: Path) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="reel-original-") as temp:
         work = Path(temp)
-        spoken = synthesize_lines(
+        spoken = with_voice_fallback(lambda: synthesize_lines(
             [(s.get("say") or s.get("line", ""), s.get("show") or s.get("line", "")) for s in scenes],
             work / "voice.wav",
-        )
+        ))
         parts: list[Path] = []
         for index, cue in enumerate(spoken):
             end = spoken[index + 1].start if index + 1 < len(spoken) else cue.end + 0.6
