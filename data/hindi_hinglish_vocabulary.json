@@ -1,0 +1,418 @@
+{
+  "pack_name": "ReelFlow AI - Hindi/Hinglish Reaction Vocabulary",
+  "version": "1.0.0",
+  "language": "hi-Latn",
+  "purpose": "A selectable vocabulary bank for context-aware, funny Hindi/Hinglish reaction commentary. This is not a script of fixed commentary lines.",
+  "important_notes": [
+    "Popularity labels are editorial starting estimates, not measured frequency rankings.",
+    "Do not claim a word is currently trending unless supported by fresh platform-specific data.",
+    "Use scene context, timing, repetition control, and platform suitability rather than inserting gaalis randomly.",
+    "Never use caste, religion, race, disability, sexuality, gender-identity, or other protected-class slurs.",
+    "Do not direct abuse at a real identifiable person. Prefer reactions to the action or situation.",
+    "Strong profanity can reduce advertiser suitability and may be unsuitable for some audiences or platforms. Keep it opt-in."
+  ],
+  "selection_policy": {
+    "default_intensity": "mild",
+    "allowed_intensities": [
+      "clean",
+      "mild",
+      "medium",
+      "strong"
+    ],
+    "strong_profanity_enabled_by_default": false,
+    "max_profanity_terms_per_clip": 1,
+    "avoid_back_to_back_same_term": true,
+    "avoid_same_root_within_last_n_reels": 5,
+    "prefer_reaction_to_action_not_person": true,
+    "use_clean_alternative_if_confidence_below": 0.72,
+    "minimum_scene_confidence": 0.72,
+    "commentary_length": "short; usually 2-8 words for a reaction beat",
+    "timing": "Place the reaction just after the action becomes clear, not before the visual punchline."
+  },
+  "vocabulary": [
+    {
+      "term": "arey bhai",
+      "intensity": "clean",
+      "tags": [
+        "surprise",
+        "general_reaction"
+      ],
+      "tone": "casual",
+      "meaning": "Hey bro / wait what",
+      "regional_note": "pan-Indian Hinglish"
+    },
+    {
+      "term": "kya scene hai",
+      "intensity": "clean",
+      "tags": [
+        "confusion",
+        "surprise"
+      ],
+      "tone": "curious",
+      "meaning": "What's going on"
+    },
+    {
+      "term": "kya bakwaas hai",
+      "intensity": "mild",
+      "tags": [
+        "bad_decision",
+        "confusion",
+        "fail"
+      ],
+      "tone": "disapproval",
+      "meaning": "What nonsense"
+    },
+    {
+      "term": "bawal",
+      "intensity": "clean",
+      "tags": [
+        "chaos",
+        "explosion",
+        "big_moment"
+      ],
+      "tone": "dramatic",
+      "meaning": "Chaos / spectacle"
+    },
+    {
+      "term": "gaand phat gayi",
+      "intensity": "medium",
+      "tags": [
+        "shock",
+        "near_miss",
+        "unexpected"
+      ],
+      "tone": "dramatic",
+      "meaning": "That was terrifying / shocking",
+      "note": "Crude phrase; use sparingly"
+    },
+    {
+      "term": "chutiyapa",
+      "intensity": "strong",
+      "tags": [
+        "reckless_action",
+        "bad_decision",
+        "absurdity"
+      ],
+      "tone": "sarcastic",
+      "meaning": "Stupid nonsense / foolish behavior",
+      "note": "Explicit profanity"
+    },
+    {
+      "term": "chutiya",
+      "intensity": "strong",
+      "tags": [
+        "reckless_action",
+        "bad_decision"
+      ],
+      "tone": "insulting",
+      "meaning": "Idiot",
+      "note": "Targets a person; prefer describing the action instead"
+    },
+    {
+      "term": "bakchodi",
+      "intensity": "medium",
+      "tags": [
+        "nonsense",
+        "chaos",
+        "silly_behavior"
+      ],
+      "tone": "playful_sarcastic",
+      "meaning": "Silly nonsense / messing around"
+    },
+    {
+      "term": "bhenchod",
+      "intensity": "strong",
+      "tags": [
+        "shock",
+        "anger",
+        "unexpected"
+      ],
+      "tone": "high_intensity",
+      "meaning": "Explicit Hindi profanity",
+      "note": "Use only when strong mode is explicitly enabled"
+    },
+    {
+      "term": "madarchod",
+      "intensity": "strong",
+      "tags": [
+        "shock",
+        "anger",
+        "unexpected"
+      ],
+      "tone": "high_intensity",
+      "meaning": "Explicit Hindi profanity",
+      "note": "Use only when strong mode is explicitly enabled"
+    },
+    {
+      "term": "gaand(u)",
+      "intensity": "strong",
+      "tags": [
+        "failure",
+        "mocking"
+      ],
+      "tone": "insulting",
+      "meaning": "Crude insult",
+      "note": "Avoid targeting a real person"
+    },
+    {
+      "term": "lodu",
+      "intensity": "medium",
+      "tags": [
+        "silly_mistake",
+        "fail",
+        "bad_decision"
+      ],
+      "tone": "teasing",
+      "meaning": "Crude insult; roughly fool"
+    },
+    {
+      "term": "harami",
+      "intensity": "medium",
+      "tags": [
+        "mischief",
+        "cheeky_action"
+      ],
+      "tone": "teasing",
+      "meaning": "Rascal / cheeky person"
+    },
+    {
+      "term": "kamina",
+      "intensity": "mild",
+      "tags": [
+        "mischief",
+        "cheeky_action",
+        "unexpected"
+      ],
+      "tone": "teasing",
+      "meaning": "Rascal / sneaky person"
+    },
+    {
+      "term": "ullu ka pattha",
+      "intensity": "mild",
+      "tags": [
+        "silly_mistake",
+        "confusion"
+      ],
+      "tone": "comic",
+      "meaning": "Silly fool"
+    },
+    {
+      "term": "akal ke dushman",
+      "intensity": "mild",
+      "tags": [
+        "bad_decision",
+        "reckless_action"
+      ],
+      "tone": "sarcastic",
+      "meaning": "Enemy of common sense"
+    },
+    {
+      "term": "hadd hai yaar",
+      "intensity": "clean",
+      "tags": [
+        "disbelief",
+        "fail",
+        "absurdity"
+      ],
+      "tone": "exasperated",
+      "meaning": "This is too much"
+    },
+    {
+      "term": "bhai kya kar raha hai",
+      "intensity": "clean",
+      "tags": [
+        "reckless_action",
+        "confusion"
+      ],
+      "tone": "disbelief",
+      "meaning": "Bro, what are you doing"
+    },
+    {
+      "term": "yeh kya bakchodi hai",
+      "intensity": "medium",
+      "tags": [
+        "chaos",
+        "absurdity",
+        "unexpected"
+      ],
+      "tone": "sarcastic",
+      "meaning": "What is this nonsense"
+    },
+    {
+      "term": "kya bawasir hai",
+      "intensity": "mild",
+      "tags": [
+        "absurdity",
+        "confusion",
+        "fail"
+      ],
+      "tone": "comic",
+      "meaning": "What ridiculous nonsense"
+    },
+    {
+      "term": "full beizzati",
+      "intensity": "clean",
+      "tags": [
+        "public_fail",
+        "embarrassment"
+      ],
+      "tone": "mocking",
+      "meaning": "Total embarrassment"
+    },
+    {
+      "term": "izzat ka falooda",
+      "intensity": "clean",
+      "tags": [
+        "public_fail",
+        "embarrassment"
+      ],
+      "tone": "comic",
+      "meaning": "Reputation completely ruined"
+    },
+    {
+      "term": "aukaat dikha di",
+      "intensity": "clean",
+      "tags": [
+        "fail",
+        "unexpected_loss"
+      ],
+      "tone": "dramatic",
+      "meaning": "Got humbled"
+    },
+    {
+      "term": "system hang ho gaya",
+      "intensity": "clean",
+      "tags": [
+        "confusion",
+        "surprise",
+        "freeze"
+      ],
+      "tone": "tech_comedy",
+      "meaning": "The system froze"
+    },
+    {
+      "term": "dimaag ka dahi",
+      "intensity": "clean",
+      "tags": [
+        "confusion",
+        "chaos"
+      ],
+      "tone": "comic",
+      "meaning": "Brain turned to yogurt / total confusion"
+    },
+    {
+      "term": "yeh toh alag level hai",
+      "intensity": "clean",
+      "tags": [
+        "impressive",
+        "unexpected",
+        "chaos"
+      ],
+      "tone": "dramatic",
+      "meaning": "This is another level"
+    }
+  ],
+  "scene_tag_map": {
+    "physical_comedy": [
+      "silly_mistake",
+      "reckless_action",
+      "absurdity"
+    ],
+    "failed_attempt": [
+      "fail",
+      "silly_mistake",
+      "bad_decision"
+    ],
+    "explosion_or_sudden_impact": [
+      "explosion",
+      "shock",
+      "unexpected",
+      "chaos"
+    ],
+    "near_miss_or_danger": [
+      "near_miss",
+      "shock",
+      "unexpected"
+    ],
+    "public_embarrassment": [
+      "public_fail",
+      "embarrassment"
+    ],
+    "confusing_behavior": [
+      "confusion",
+      "absurdity"
+    ],
+    "mischief_or_prank": [
+      "mischief",
+      "cheeky_action"
+    ],
+    "unexpected_success": [
+      "impressive",
+      "unexpected",
+      "big_moment"
+    ]
+  },
+  "sample_asset_scene_tags": {
+    "1.mp4": [
+      {
+        "approx_seconds": "0-5",
+        "tags": [
+          "physical_comedy",
+          "reckless_action",
+          "absurdity"
+        ],
+        "note": "Person attempts to enter a bus through a window."
+      },
+      {
+        "approx_seconds": "5-10",
+        "tags": [
+          "failed_attempt",
+          "confusion"
+        ],
+        "note": "The awkward attempt continues; reaction beat becomes clearer."
+      }
+    ],
+    "2.mp4": [
+      {
+        "approx_seconds": "0-8",
+        "tags": [
+          "confusing_behavior",
+          "mischief"
+        ],
+        "note": "Three game characters move together."
+      },
+      {
+        "approx_seconds": "8-15",
+        "tags": [
+          "explosion_or_sudden_impact",
+          "shock",
+          "chaos"
+        ],
+        "note": "Sudden explosion is the main punchline."
+      }
+    ],
+    "3.mp4": [
+      {
+        "approx_seconds": "0-63",
+        "tags": [
+          "multiple_scenes",
+          "physical_comedy",
+          "failed_attempt",
+          "unexpected"
+        ],
+        "note": "Compilation with several unrelated fail moments. Detect and tag each sub-scene separately; do not assign one word to the entire video."
+      }
+    ]
+  },
+  "openai_prompt_template": "You are ReelFlow AI's Hindi/Hinglish reaction-word selector. Analyze the supplied clip description and timestamped scene events. Choose at most ONE vocabulary term from the supplied vocabulary bank that matches the action and emotional beat. Respect allowed_intensity and selection_policy. Do not invent new gaalis. Do not use protected-class slurs or target a real person's identity. Prefer reacting to the action, not insulting a person. If confidence is below minimum_scene_confidence, return a clean reaction or no reaction. Avoid repetition using recent_terms. Return valid JSON only with keys: scene_tag, selected_term, intensity, reason, trigger_timestamp_seconds, confidence, clean_fallback, should_speak. Keep the selected term short and do not write a full commentary sentence.",
+  "output_schema_example": {
+    "scene_tag": "explosion_or_sudden_impact",
+    "selected_term": "bawal",
+    "intensity": "clean",
+    "reason": "A sudden explosion creates a chaotic punchline.",
+    "trigger_timestamp_seconds": 9.4,
+    "confidence": 0.91,
+    "clean_fallback": "arey bhai",
+    "should_speak": true
+  }
+}

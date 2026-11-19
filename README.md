@@ -13,11 +13,13 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 - Receives Reel links from Instagram webhook events through a Cloudflare Worker relay.
 - Filters incoming events to the configured sender and destination account, then deduplicates them.
 - Downloads accessible Reels locally with `yt-dlp` and an optional signed-in Firefox session.
-- Samples four low-detail frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
+- Samples six low-detail, timestamped frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
 - Makes one AI call per Reel for the caption, hashtags, an on-screen hook and a short commentary script.
 - Renders a **commentary Reel** locally in three beats: a spoken intro that teases what the clip is about, the clip with its own sound, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
 - Voices it like a comedian, not a narrator: the AI writes short punchy beats, each sentence gets its own tone (excited, questioning), and `...` becomes a comic pause. It uses a free Microsoft Edge neural voice (`TTS_ENGINE=edge`, default Ava) and redoes a Reel with the offline Kokoro voice if Edge is down.
-- Speaks English or Hindi (`COMMENTARY_LANGUAGE=Hindi`: Hindi voice, Hinglish captions), with optional playful slang (`SLANG_LEVEL=off|mild|strong`) kept out of the hook, caption and hashtags and never used for slurs or when children are on screen.
+- Speaks English or Hindi (`COMMENTARY_LANGUAGE=Hindi`: Hindi voice, Hinglish captions). The AI picks a male or female narrator per clip.
+- Reacts to the moment: the same single AI call sees timestamped frames and drops up to two short reactions (`MAX_REACTIONS`) right after the action they react to.
+- Picks slang and gaali only from `data/hindi_hinglish_vocabulary.json`, matched to the scene, at the chosen intensity (`SLANG_LEVEL=clean|mild|medium|strong`, default mild). Every word is validated against that list, `BLOCKED_TERMS` are never used, recently used terms are not repeated for five Reels, and any line with a non-allowed word is dropped. Slang stays out of the hook, caption and hashtags, and the whole Reel stays clean when children are on screen.
 - Credits the original creator in the caption and invites them as a collaborator when publishing.
 - Optionally fills reserved slots with **original Reels**: an AI script and voiceover over free Pixabay or Pexels stock footage.
 - Refuses to publish a raw, unchanged re-upload; Reels queued before the commentary step get commentary added and keep their slot.

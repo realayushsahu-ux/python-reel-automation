@@ -658,27 +658,129 @@ def language_rules() -> str:
     return f'LANGUAGE: {language}. For each spoken sentence give "say" and "show" as the same sentence.'
 
 
-SLANG_LEVELS = {
-    "off": "SWEARING: none; keep it clean.",
-    "mild": ("SWEARING: drop 1-2 mild desi swear or slang words where they land as a joke, for example saala, "
-             "abe, kamina, bakwaas, pagal, ullu ka pattha, ghanta, bawaal."),
-    "strong": ("SWEARING: use 2-3 Hindi gaali as funny reactions across the intro and outro, and at least "
-               "one of the stronger ones: chutiyapa, bakchodi, gaand phat gayi. Lighter ones you can add: "
-               "saala, kamina, ghanta, bawaal."),
-}
+VOCAB_FILE = ROOT / "data" / "hindi_hinglish_vocabulary.json"
+VOCAB_HISTORY = ROOT / "media" / "vocab-history.json"
+INTENSITIES = ["clean", "mild", "medium", "strong"]
+# Gaali about mothers/sisters and words that insult a person rather than the action
+# hurt reach the most; blocked unless BLOCKED_TERMS is changed in .env.
+DEFAULT_BLOCKED_TERMS = "bhenchod,madarchod,chutiya,gaand(u)"
 SLANG_LIMITS = (
-    "Swear words go only in the spoken script, never in the hook, caption or hashtags. Use them as a reaction "
-    "to the situation, never as an insult aimed at a real person in the clip. Never use slurs about caste, "
-    "religion, region, gender, sexuality, disability or skin colour, and never gaali about anyone's mother or "
-    "sister. If children appear in the clip or the topic is about children, keep the whole script clean."
+    "Gaali and slang go only in the spoken lines, never in the hook, caption or hashtags. React to the "
+    "action or situation, never insult a real person in the clip. Never use slurs about caste, religion, "
+    "region, gender, sexuality, disability or skin colour. If children appear, use no gaali at all."
 )
+_VOCAB: dict[str, Any] | None = None
 
 
-def slang_rules() -> str:
-    level = setting("SLANG_LEVEL", "off").lower()
-    if level not in SLANG_LEVELS or level == "off":
-        return SLANG_LEVELS["off"]
-    return f"{SLANG_LEVELS[level]} {SLANG_LIMITS}"
+def slang_level() -> str:
+    """clean, mild, medium or strong (SLANG_LEVEL; 'off' means clean). Default mild."""
+    level = setting("SLANG_LEVEL", "mild").lower()
+    level = {"off": "clean", "none": "clean"}.get(level, level)
+    return level if level in INTENSITIES else "mild"
+
+
+def load_vocabulary() -> dict[str, Any]:
+    global _VOCAB
+    if _VOCAB is None:
+        try:
+            _VOCAB = json.loads(VOCAB_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _VOCAB = {"vocabulary": [], "selection_policy": {}, "scene_tag_map": {}}
+    return _VOCAB
+
+
+def blocked_terms() -> set[str]:
+    return {t.strip().lower() for t in setting("BLOCKED_TERMS", DEFAULT_BLOCKED_TERMS).split(",") if t.strip()}
+
+
+def allowed_vocabulary(level: str) -> list[dict[str, Any]]:
+    """Vocabulary terms allowed at this intensity, minus blocked terms."""
+    top = INTENSITIES.index(level)
+    blocked = blocked_terms()
+    return [v for v in load_vocabulary().get("vocabulary", [])
+            if v.get("intensity") in INTENSITIES and INTENSITIES.index(v["intensity"]) <= top
+            and str(v.get("term", "")).lower() not in blocked]
+
+
+def _term_pattern(term: str) -> re.Pattern[str]:
+    # "gaand(u)" in the pack means "gaand" or "gaandu".
+    body = re.escape(term.lower()).replace(r"\(u\)", "u?")
+    return re.compile(rf"(?<![a-z]){body}(?![a-z])")
+
+
+def terms_in(text: str) -> list[dict[str, Any]]:
+    """Vocabulary entries (any intensity) that appear in a Hinglish line."""
+    lowered = text.lower()
+    hits = []  # (start, end, entry) for every place a term appears
+    for entry in load_vocabulary().get("vocabulary", []):
+        for match in _term_pattern(str(entry.get("term", ""))).finditer(lowered):
+            hits.append((match.start(), match.end(), entry))
+    # "yeh kya bakchodi hai" contains "bakchodi", and "gaand phat gayi" contains
+    # "gaand": a match inside a longer phrase's match is part of that phrase.
+    found: list[dict[str, Any]] = []
+    for start, end, entry in hits:
+        inside = any(s <= start and end <= e and (e - s) > (end - start) for s, e, _ in hits)
+        if not inside and entry not in found:
+            found.append(entry)
+    return found
+
+
+def recent_terms() -> list[str]:
+    n = int(load_vocabulary().get("selection_policy", {}).get("avoid_same_root_within_last_n_reels", 5))
+    try:
+        history = json.loads(VOCAB_HISTORY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [term for reel in history[-n:] for term in reel]
+
+
+def remember_terms(terms: list[str]) -> None:
+    """Record the terms one finished Reel used, so the next Reels pick different ones."""
+    try:
+        history = json.loads(VOCAB_HISTORY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        history = []
+    history.append(sorted(set(terms)))
+    VOCAB_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    VOCAB_HISTORY.write_text(json.dumps(history[-50:], ensure_ascii=False), encoding="utf-8")
+
+
+def slang_rules(level: str, avoid: list[str]) -> str:
+    if level == "clean":
+        return "SWEARING: none; keep every line clean."
+    policy = load_vocabulary().get("selection_policy", {})
+    max_terms = int(setting("MAX_SLANG_PER_REEL") or policy.get("max_profanity_terms_per_clip", 1))
+    bank = [{"term": v["term"], "intensity": v["intensity"], "tags": v.get("tags", [])}
+            for v in allowed_vocabulary(level)]
+    return (
+        f"SWEARING (level: {level}): pick reactions ONLY from this vocabulary bank, matched to what is "
+        f"happening at that moment (scene tags: {', '.join(load_vocabulary().get('scene_tag_map', {}))}). "
+        f"Use at most {max_terms} non-clean term(s) in the whole Reel and never the same term twice. Unless "
+        f"children are present, DO use at least one non-clean term (up to {level}), placed on the funniest "
+        "moment - that is what this audience comes for. Do not use these recently used terms: "
+        f"{', '.join(avoid) or 'none'}. Do not invent other gaalis. Vary how lines start; do not open "
+        "every line with arey bhai or zara dhyaan se dekho.\n"
+        f"BANK: {json.dumps(bank, ensure_ascii=False, separators=(',', ':'))}\n{SLANG_LIMITS}"
+    )
+
+
+def vet_line(line: tuple[str, str], level: str, used: list[str], kids: bool,
+             recent: list[str] = ()) -> tuple[str, str] | None:
+    """Check a spoken line's vocabulary against the JSON allowlist; None means drop it."""
+    allowed = {v["term"].lower() for v in allowed_vocabulary(level)}
+    policy = load_vocabulary().get("selection_policy", {})
+    max_terms = int(setting("MAX_SLANG_PER_REEL") or policy.get("max_profanity_terms_per_clip", 1))
+    found = terms_in(line[1])
+    for entry in found:
+        term = entry["term"].lower()
+        rude = entry.get("intensity") != "clean"
+        if term not in allowed or (rude and (kids or term in used or term in recent)):
+            return None
+    rude_terms = [e["term"].lower() for e in found if e.get("intensity") != "clean"]
+    if len([t for t in used if t]) + len(rude_terms) > max_terms and rude_terms:
+        return None
+    used.extend(rude_terms)
+    return line
 
 
 def credit_line(creator: str) -> str:
@@ -687,58 +789,94 @@ def credit_line(creator: str) -> str:
 
 
 def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
-    """One AI call per Reel: caption, hashtags, on-screen hook, spoken intro and spoken ending."""
+    """One AI call per Reel: caption, hashtags, hook, spoken intro, timed reaction beats,
+    spoken ending and the narrator's voice; every gaali is checked against the vocabulary JSON."""
     client = ai_client()
     detail = setting("AI_IMAGE_DETAIL", "low").lower()
-    frame_count = max(2, int(setting("AI_FRAME_COUNT", "4") or 4))
+    frame_count = max(2, int(setting("AI_FRAME_COUNT", "6") or 6))
     frames = read_video_frames(video_path, frame_count, max_width=512 if detail == "low" else 768)
     transcript = get_transcript(video_path, client)
     duration, _has_audio = reelmaker.probe(video_path)
+    level = slang_level()
+    avoid = recent_terms()
+    max_reactions = max(0, int(setting("MAX_REACTIONS", "2") or 2))
     by = f" (@{creator})" if creator else ""
     content: list[dict[str, Any]] = [{
         "type": "text",
         "text": (
             f"These are {len(frames)} frames, in order, from a {duration:.0f}-second video made by another "
-            f"creator{by}. You run a desi commentary account. The Reel plays like this: your voice opens "
-            "it, the clip then plays with its own sound, and your voice closes it.\n"
+            f"creator{by}; each frame is labelled with its time. You run a desi commentary account. The Reel "
+            "plays like this: your voice opens it, the clip plays with its own sound while you drop short "
+            "reactions at the key moments, and your voice closes it.\n"
             "Return JSON with:\n"
             "- caption: 1-2 natural sentences for the post, no hashtags\n"
             "- hashtags: 3 to 5 relevant hashtags in one space-separated string\n"
             "- hook: on-screen title, at most 7 words, no emoji, no hashtags\n"
+            '- voice: "male" or "female", whichever narrator makes this clip funnier\n'
+            "- children_present: true if any child is visible\n"
             '- intro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total. Tell what '
-            "this video is about with curiosity and energy so people keep watching, but do NOT reveal the "
-            "ending or punchline.\n"
+            "this video is about with curiosity and energy, but do NOT reveal the ending or punchline.\n"
+            f'- reactions: 0 to {max_reactions} items {{"t": seconds, "scene_tag", "term", "confidence", '
+            '"say", "show"}. A 2-8 word reaction spoken just after the action at time t becomes clear '
+            "(never before the visual punchline), e.g. a fail, a shock or a surprise. Use different words "
+            "for different moments. term is the exact bank term used, or empty.\n"
             '- outro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total, said over the '
-            "end of the clip. React to what just happened, then ask ONE specific, easy question people will "
-            "want to answer in the comments (pick a side, rate it 1-10, what would you do, tag a friend who "
-            "does this). End by telling them to answer in the comments.\n"
+            "end of the clip. React to what happened, then ask ONE specific, easy question people will want "
+            "to answer in the comments (pick a side, rate it 1-10, what would you do, tag a friend). End by "
+            "telling them to answer in the comments.\n"
             "Deliver it like a desi stand-up comedian reacting live, never like someone reading a script: "
             "short punchy beats separated by '...' for comic timing, reactions like arre bhai, oye, haha, "
             "exaggeration, and the punchline last. No emoji, no hashtags. Do not invent facts about the "
             "people shown and do not claim you filmed it.\n"
-            f"{language_rules()}\n{slang_rules()}\n\n"
+            f"{language_rules()}\n{slang_rules(level, avoid)}\n\n"
             f"Speech heard in the clip: {transcript or '[none]'}"
         ),
     }]
-    content.extend(
-        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame}", "detail": detail}}
-        for frame in frames
-    )
+    for index, frame in enumerate(frames):
+        seconds = duration * index / max(1, len(frames) - 1)
+        content.append({"type": "text", "text": f"Frame at {seconds:.1f}s:"})
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame}", "detail": detail}})
     result = ask_json(client, [
-        {"role": "system", "content": "You write short, accurate, original commentary for vertical videos."},
+        {"role": "system", "content": "You write short, accurate, original, funny commentary for vertical videos."},
         {"role": "user", "content": content},
     ])
+    kids = bool(result.get("children_present"))
+    recent = [t.lower() for t in avoid]
+    used: list[str] = []  # non-clean terms this Reel has used so far
+    fallback = ("अरे भाई... ये देखो!", "Arre bhai... ye dekho!") if reelmaker.is_hindi() else ("Wait for it...",) * 2
+    intro = [line for line in (vet_line(x, level, used, kids, recent) for x in script_lines(result.get("intro"))) if line]
+    min_confidence = float(load_vocabulary().get("selection_policy", {}).get("minimum_scene_confidence", 0.72))
+    reactions: list[tuple[float, tuple[str, str]]] = []
+    for item in (result.get("reactions") or [])[:max_reactions]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            moment = float(item.get("t"))
+            confidence = float(item.get("confidence", 1))
+        except (TypeError, ValueError):
+            continue
+        lines = script_lines([item])
+        if not lines or confidence < min_confidence or not 0 <= moment <= duration:
+            continue
+        line = vet_line(lines[0], level, used, kids, recent)
+        if line:
+            reactions.append((moment, line))
+    outro = [line for line in (vet_line(x, level, used, kids, recent) for x in script_lines(result.get("outro"))) if line]
     caption = str(result.get("caption", "")).strip()
-    intro = script_lines(result.get("intro"))
-    outro = script_lines(result.get("outro"))
-    if not caption or not intro or not outro:
-        raise RuntimeError("AI returned an empty caption, intro or ending")
+    if not caption or not outro:
+        raise RuntimeError("AI returned an empty caption or ending")
+    voice = str(result.get("voice", "")).strip().lower()
     return {
         "caption": f"{caption}\n\n{credit_line(creator)}",
         "hashtags": str(result.get("hashtags", "")).strip(),
         "hook": str(result.get("hook", "")).strip(),
-        "intro": intro,
+        "intro": intro or [fallback],
+        "reactions": reactions,
         "outro": outro,
+        "voice": voice if voice in {"male", "female"} else "",
+        "kids": kids,
+        "terms": [e["term"] for _m, line in reactions for e in terms_in(line[1])]
+                 + [e["term"] for line in intro + outro for e in terms_in(line[1])],
     }
 
 
@@ -822,7 +960,9 @@ def analyze_converted_videos(tabs: dict[str, Any]) -> tuple[int, int]:
             destination = ready_dir / f"{row['job_id']}.mp4"
             ready_path = destination
             reelmaker.render_commentary(path, draft["intro"], draft["outro"], destination,
-                                        hook=draft["hook"], credit=creator)
+                                        hook=draft["hook"], credit=creator,
+                                        reactions=draft["reactions"], voice=draft["voice"])
+            remember_terms(draft["terms"])
             slot = next_publish_slot(occupied, commentary_slots())
             ready_record = {
                 "job_id": row.get("job_id", ""), "source_url": row.get("source_url", ""),
@@ -898,17 +1038,35 @@ def source_for(job_id: str, source_url: str) -> Path:
     raise RuntimeError("Source clip could not be downloaded again")
 
 
-def rerender_queue() -> tuple[int, int]:
+def rerender_queue(skip_newer_than: datetime | None = None) -> tuple[int, int]:
     """Re-edit every scheduled commentary Reel with the current style, keeping its slot.
 
-    Run with the worker stopped, so row numbers do not shift while it works.
+    Safe to run while the worker is running: each row is looked up again by job_id
+    before saving (posting a Reel deletes rows and shifts the rest), and Reels due
+    within 15 minutes are left alone. To resume an interrupted run, pass the time it
+    started: Reels already re-edited since then are skipped instead of paying again.
     """
     ready_ws = ensure_tabs()[READY_TAB]
     done = failed = 0
-    for row_number, row in records(ready_ws):
+    for _row_number, row in records(ready_ws):
         if (row.get("status", "").strip().upper() != "SCHEDULED"
                 or row.get("content_type", "").strip().upper() != "COMMENTARY"):
             continue
+        try:
+            due = datetime.fromisoformat(row.get("scheduled_at", "").replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=LOCAL_TZ)
+            if due <= local_now() + timedelta(minutes=15):
+                continue
+        except ValueError:
+            pass
+        if skip_newer_than:
+            try:
+                updated = datetime.fromisoformat(row.get("updated_at", "").replace("Z", "+00:00"))
+                if updated >= skip_newer_than:
+                    continue
+            except ValueError:
+                pass
         job_id = row.get("job_id", "")
         try:
             source = source_for(job_id, row.get("source_url", ""))
@@ -916,8 +1074,15 @@ def rerender_queue() -> tuple[int, int]:
             draft = draft_from_video(source, creator)
             destination = ROOT / "media" / "ready_to_post" / f"{job_id}-{int(time.time())}.mp4"
             reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
-                                        hook=draft["hook"], credit=creator)
-            update_record(ready_ws, row_number, video_file=str(destination.relative_to(ROOT)),
+                                        hook=draft["hook"], credit=creator,
+                                        reactions=draft["reactions"], voice=draft["voice"])
+            current = next((n for n, r in records(ready_ws) if r.get("job_id") == job_id
+                            and r.get("status", "").strip().upper() == "SCHEDULED"), None)
+            if current is None:  # posted or rejected meanwhile
+                destination.unlink(missing_ok=True)
+                continue
+            remember_terms(draft["terms"])
+            update_record(ready_ws, current, video_file=str(destination.relative_to(ROOT)),
                           caption=draft["caption"], hashtags=draft["hashtags"], updated_at=now_iso())
             old = Path(row.get("video_file", "").strip())
             old = old if old.is_absolute() else ROOT / old
@@ -970,7 +1135,9 @@ def upgrade_raw_ready_rows(tabs: dict[str, Any]) -> int:
             draft = draft_from_video(source, creator)
             destination = source.with_name(f"{job_id}-commentary.mp4")
             reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
-                                        hook=draft["hook"], credit=creator)
+                                        hook=draft["hook"], credit=creator,
+                                        reactions=draft["reactions"], voice=draft["voice"])
+            remember_terms(draft["terms"])
             update_record(
                 ready_ws, row_number, video_file=str(destination.relative_to(ROOT)),
                 caption=draft["caption"], hashtags=draft["hashtags"], content_type="COMMENTARY",
@@ -1006,7 +1173,7 @@ def plan_original(client: OpenAI, recent_topics: list[str]) -> dict[str, Any]:
             "2-4 word English stock-footage search that shows that sentence literally}\n"
             "The first sentence is a strong hook and the last asks viewers a question. Use only well-known, "
             "true facts and no made-up numbers. No emoji. Keep search terms in English.\n"
-            f"{language_rules()}\n{slang_rules()}"
+            f"{language_rules()}\n{slang_rules(slang_level(), recent_terms())}"
         )},
     ])
     scenes = [s for s in result.get("scenes", []) if isinstance(s, dict) and (s.get("say") or s.get("line"))]
@@ -1124,6 +1291,7 @@ def main() -> None:
     parser.add_argument("--poll-seconds", type=int, default=180)
     parser.add_argument("--video", help="preview: local video to turn into a commentary Reel")
     parser.add_argument("--creator", default="", help="preview: original creator's Instagram username")
+    parser.add_argument("--resume-from", help="rerender: skip Reels re-edited after this ISO time (e.g. 2026-11-19T20:40+05:30)")
     args = parser.parse_args()
     if args.command == "setup-voice":
         reelmaker.download_voice_model()
@@ -1136,14 +1304,19 @@ def main() -> None:
         draft = draft_from_video(source, args.creator)
         out = reelmaker.render_commentary(
             source, draft["intro"], draft["outro"], ROOT / "media" / "preview" / f"{source.stem}-commentary.mp4",
-            hook=draft["hook"], credit=args.creator,
+            hook=draft["hook"], credit=args.creator, reactions=draft["reactions"], voice=draft["voice"],
         )
-        shown = {"hook": draft["hook"], "intro": [s for _x, s in draft["intro"]], "outro": [s for _x, s in draft["outro"]],
+        shown = {"hook": draft["hook"], "voice": draft["voice"], "kids": draft["kids"], "terms": draft["terms"],
+                 "reactions": [f"{t:.1f}s {line[1]}" for t, line in draft["reactions"]],
+                 "intro": [s for _x, s in draft["intro"]], "outro": [s for _x, s in draft["outro"]],
                  "caption": draft["caption"], "hashtags": draft["hashtags"]}
         print(json.dumps(shown, indent=2, ensure_ascii=True))
         print(f"Preview saved: {out}")
     elif args.command == "rerender":
-        done, failed = rerender_queue()
+        since = datetime.fromisoformat(args.resume_from) if args.resume_from else None
+        if since and since.tzinfo is None:
+            since = since.replace(tzinfo=LOCAL_TZ)
+        done, failed = rerender_queue(since)
         print(f"Re-edited {done} scheduled Reel(s); {failed} kept their previous version.")
     elif args.command == "preview-original":
         plan = plan_original(ai_client(), [])

@@ -171,6 +171,18 @@ def tts():
 
 SAMPLE_RATE = 24000
 _EDGE_FAILED = False
+_NARRATOR = ""  # "male" or "female" for the Reel being voiced; empty = EDGE_VOICE
+
+
+def edge_voice() -> str:
+    """The Edge voice for the current Reel: the AI picks male or female per clip
+    (AUTO_VOICE=true); otherwise EDGE_VOICE."""
+    auto = setting("AUTO_VOICE", "true").lower() not in {"0", "false", "no", "off"}
+    if auto and _NARRATOR == "female":
+        return setting("EDGE_VOICE_FEMALE", "en-US-AvaMultilingualNeural")
+    if auto and _NARRATOR == "male":
+        return setting("EDGE_VOICE_MALE", "en-US-BrianMultilingualNeural")
+    return setting("EDGE_VOICE") or ("hi-IN-MadhurNeural" if is_hindi() else "en-US-GuyNeural")
 
 
 def _percent(value: str, default: int) -> int:
@@ -200,8 +212,8 @@ def _speak_edge(text: str) -> np.ndarray:
 
     import edge_tts
 
-    voice = setting("EDGE_VOICE") or ("hi-IN-MadhurNeural" if is_hindi() else "en-US-GuyNeural")
     rate, pitch = _prosody(text)
+    voice = edge_voice()
     with tempfile.TemporaryDirectory(prefix="edge-tts-") as temp:
         mp3 = Path(temp) / "line.mp3"
         communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
@@ -453,23 +465,47 @@ def compose(base_video: Path, voice_wav: Path, spoken: list[Cue], out_path: Path
     return out_path
 
 
-def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *, hook: str, credit: str) -> Path:
-    """Commentary Reel: a spoken intro on what the clip is about, the clip with its own sound,
-    and a spoken ending that asks viewers to comment; plus captions, hook and creator credit."""
+def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *, hook: str, credit: str,
+                      reactions: list | tuple = (), voice: str = "") -> Path:
+    """Commentary Reel: a spoken intro on what the clip is about, the clip with its own sound
+    plus short reactions at the moments they react to, and a spoken ending that asks viewers
+    to comment; plus captions, hook and creator credit.
+
+    reactions: [(seconds into the clip, (say, show)), ...]; voice: "male", "female" or "".
+    """
+    global _NARRATOR
     out_path.parent.mkdir(parents=True, exist_ok=True)
     duration, _has_audio = probe(source)
-    (intro_audio, intro_cues), (outro_audio, outro_cues) = with_voice_fallback(
-        lambda: (speak_lines(intro), speak_lines(outro)))
+    _NARRATOR = voice
+    try:
+        (intro_audio, intro_cues), (outro_audio, outro_cues), beats = with_voice_fallback(
+            lambda: (speak_lines(intro), speak_lines(outro),
+                     [(moment, speak_lines([line])) for moment, line in sorted(reactions, key=lambda r: r[0])]))
+    finally:
+        _NARRATOR = ""
     lead = 0.3
-    intro_end = lead + len(intro_audio) / SAMPLE_RATE
+    segments = [(lead, intro_audio, intro_cues)]
+    cursor = lead + len(intro_audio) / SAMPLE_RATE
     outro_seconds = len(outro_audio) / SAMPLE_RATE
+    latest_outro = max(cursor + 1.0, duration - outro_seconds - 0.3)
+    for moment, (beat_audio, beat_cues) in beats:
+        # Just after the action is visible, never on top of another line.
+        start = max(moment + 0.25, cursor + 0.3)
+        end = start + len(beat_audio) / SAMPLE_RATE
+        if end + 0.3 > latest_outro:
+            continue  # no room before the ending; skip this reaction
+        segments.append((start, beat_audio, beat_cues))
+        cursor = end
     # The ending plays over the last moments of the clip; a short clip is
-    # extended with its last frame so the two voice parts never overlap.
-    outro_start = max(intro_end + 1.0, duration - outro_seconds - 0.3)
-    gap = np.zeros(int((outro_start - intro_end) * SAMPLE_RATE), dtype=np.float32)
-    samples = np.concatenate([np.zeros(int(lead * SAMPLE_RATE), dtype=np.float32), intro_audio, gap, outro_audio])
-    cues = ([Cue(c.text, c.start + lead, c.end + lead) for c in intro_cues]
-            + [Cue(c.text, c.start + outro_start, c.end + outro_start) for c in outro_cues])
+    # extended with its last frame so voice parts never overlap.
+    outro_start = max(cursor + 0.6, duration - outro_seconds - 0.3)
+    segments.append((outro_start, outro_audio, outro_cues))
+    samples = np.zeros(int((outro_start + outro_seconds + 0.1) * SAMPLE_RATE), dtype=np.float32)
+    cues: list[Cue] = []
+    for start, audio, spoken in segments:
+        index = int(start * SAMPLE_RATE)
+        samples[index:index + len(audio)] += audio[:len(samples) - index]
+        cues += [Cue(c.text, c.start + start, c.end + start) for c in spoken]
     with tempfile.TemporaryDirectory(prefix="reel-render-") as temp:
         work = Path(temp)
         write_wav(samples, work / "voice.wav")
