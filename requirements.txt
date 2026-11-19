@@ -6,3 +6,7 @@ requests>=2.31,<3
 opencv-python-headless>=4.10,<5
 imageio-ffmpeg>=0.5,<1
 yt-dlp>=2025.1
+kokoro-onnx>=0.6,<1
+faster-whisper>=1.2,<2
+Pillow>=10,<13
+edge-tts>=7,<8

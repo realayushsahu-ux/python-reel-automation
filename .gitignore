@@ -13,6 +13,8 @@ meta-session-secret*
 meta-webhook-events*.jsonl
 .relay-poll-at
 media/
+models/
+.original-failed-at
 logs/
 *.log
 *.sqlite

@@ -6,17 +6,27 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 
 > Use this project only for Reels you have permission to repost. Instagram availability, account permissions, and platform limits can still affect downloads or publishing.
 
-## What it does
+## What it does?
 
 - Receives Reel links from Instagram webhook events through a Cloudflare Worker relay.
 - Filters incoming events to the configured sender and destination account, then deduplicates them.
 - Downloads accessible Reels locally with `yt-dlp` and an optional signed-in Firefox session.
-- Samples up to eight frames with OpenCV and transcribes available audio with FFmpeg plus the configured transcription API.
-- Uses an OpenAI-compatible vision model to draft a caption and relevant hashtags.
+- Samples six low-detail frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
+- Makes one AI call per Reel for the caption, hashtags, an on-screen hook and a short commentary script.
+- Renders a **commentary Reel** locally in three beats: a spoken intro that teases what the clip is about, the clip with its own sound, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
+- Uses a free, natural Microsoft Edge neural voice (`TTS_ENGINE=edge`) and falls back to the offline Kokoro voice automatically.
+- Speaks English or Hindi (`COMMENTARY_LANGUAGE=Hindi`: Hindi voice, Hinglish captions), with optional playful slang (`SLANG_LEVEL=off|mild|strong`) kept out of the hook, caption and hashtags and never used for slurs or when children are on screen.
+- Credits the original creator in the caption and invites them as a collaborator when publishing.
+- Optionally fills reserved slots with **original Reels**: an AI script and voiceover over free Pixabay or Pexels stock footage.
+- Refuses to publish a raw, unchanged re-upload; Reels queued before the commentary step get commentary added and keep their slot.
 - Schedules each ready Reel in the next available India-time slot: **11:00, 18:00, 22:00, or 23:00 Asia/Kolkata**.
 - Publishes due Reels through Meta's Instagram Graph API and archives the result.
 - Separates failed work and operator-rejected Reels so one problem does not block the rest of the queue.
 - Runs as a local Windows background task; the computer must be awake and online for downloads and publishing.
+
+## Why commentary and original Reels
+
+Instagram stops recommending accounts that mostly re-upload other people's clips ("unoriginal content"). Small edits such as crops, borders, speed changes or a caption credit do not count as original. Added commentary and voiceover do, and an account becomes eligible again once most of its posts from the last 30 days are original. So the pipeline never posts a clip unchanged: every downloaded Reel gets a voiceover, and the optional original Reels keep the account's mix original.
 
 ## Workflow
 
@@ -79,6 +89,26 @@ Fill the required values in `.env` on your computer. Save your Google service ac
 
 The real `.env` and credential file are intentionally excluded from Git. Never paste their contents into an issue or chat.
 
+Download the free local voice model once (about 120 MB, from the kokoro-onnx GitHub release):
+
+```powershell
+.\.venv\Scripts\python.exe pipeline.py setup-voice
+```
+
+To try the commentary step on any local clip without touching the sheet or Instagram:
+
+```powershell
+.\.venv\Scripts\python.exe pipeline.py preview --video media\clip.mp4 --creator their_username
+```
+
+For original Reels, create a free Pixabay account and copy the key shown at https://pixabay.com/api/docs/ into `PIXABAY_API_KEY` in `.env` (a Pexels key in `PEXELS_API_KEY` also works, but Pexels paused new keys in November 2026), and choose `ORIGINAL_SLOTS` and `ORIGINAL_NICHE`. `pipeline.py preview-original` renders a sample. Without a key, every slot is a commentary Reel.
+
+After changing the voice or style, re-edit everything already scheduled (stop the worker first so sheet rows do not move; each Reel keeps its slot):
+
+```powershell
+.\.venv\Scripts\python.exe pipeline.py rerender
+```
+
 ### Configure Meta and the relay
 
 1. Create/configure a Meta app for the Instagram account and grant the required publishing and messaging permissions.
@@ -133,4 +163,4 @@ For unattended Windows use, configure Task Scheduler to run the same command at 
 
 ## Technology
 
-Python · Google Sheets API · Meta Instagram Graph API · Cloudflare Workers/KV · yt-dlp · OpenCV · FFmpeg · OpenAI-compatible vision and transcription APIs
+Python · Google Sheets API · Meta Instagram Graph API · Cloudflare Workers/KV · yt-dlp · OpenCV · FFmpeg · Edge neural TTS · Kokoro TTS · faster-whisper · Pillow · Pixabay / Pexels APIs · OpenAI-compatible vision API

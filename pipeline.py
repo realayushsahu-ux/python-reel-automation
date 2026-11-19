@@ -7,9 +7,10 @@ import base64
 import hashlib
 import json
 import os
-import shutil
+import re
 import subprocess
 import tempfile
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ import gspread
 import requests
 from dotenv import load_dotenv
 from openai import OpenAI
+
+import reelmaker
 
 
 ROOT = Path(__file__).resolve().parent
@@ -35,11 +38,14 @@ YTDLP_MAX_VIDEO_BYTES = 300 * 1024 * 1024
 COMMON_HEADERS = [
     "job_id", "source_url", "source_message_id", "video_file", "caption",
     "hashtags", "scheduled_at", "posted_url", "status", "stage", "attempts",
-    "error", "created_at", "updated_at",
+    "error", "created_at", "updated_at", "content_type", "creator", "topic",
 ]
+# Only these kinds of Reels may be published; a raw re-upload of someone else's
+# clip is what got the account removed from recommendations.
+PUBLISHABLE_TYPES = {"COMMENTARY", "ORIGINAL"}
 TAB_HEADERS = {
-    REEL_LINK_TAB: ["job_id", "source_url", "source_message_id", "status", "stage", "attempts", "error", "created_at", "updated_at"],
-    VIDEO_TAB: ["job_id", "source_url", "source_message_id", "video_file", "status", "stage", "attempts", "error", "created_at", "updated_at"],
+    REEL_LINK_TAB: ["job_id", "source_url", "source_message_id", "status", "stage", "attempts", "error", "created_at", "updated_at", "creator"],
+    VIDEO_TAB: ["job_id", "source_url", "source_message_id", "video_file", "status", "stage", "attempts", "error", "created_at", "updated_at", "creator"],
     FAILED_TAB: COMMON_HEADERS + ["failed_at"],
     READY_TAB: COMMON_HEADERS,
     POSTED_TAB: COMMON_HEADERS + ["posted_at"],
@@ -487,7 +493,8 @@ def automatic_downloads(tabs: dict[str, Any]) -> tuple[int, int]:
                     raise RuntimeError(f"Downloaded format {actual.suffix} is not a publishable MP4/MOV")
                 if actual.stat().st_size < 1024 or actual.stat().st_size > YTDLP_MAX_VIDEO_BYTES:
                     raise RuntimeError("Downloaded video is empty or exceeds the 300 MB limit")
-            update_record(tabs[REEL_LINK_TAB], row_number, status="VIDEO_CONVERTED", stage="AI_ANALYSIS", video_file=str(actual.relative_to(ROOT)), error="", updated_at=now_iso())
+            creator = str(info.get("channel") or "").strip()
+            update_record(tabs[REEL_LINK_TAB], row_number, status="VIDEO_CONVERTED", stage="AI_ANALYSIS", creator=creator, error="", updated_at=now_iso())
             downloaded += 1
             print(f"{row.get('job_id')}: video downloaded automatically with yt-dlp")
         except Exception as exc:
@@ -529,7 +536,7 @@ def import_converted_videos(tabs: dict[str, Any]) -> int:
             "job_id": job_id, "source_url": link.get("source_url", ""),
             "source_message_id": link.get("source_message_id", ""),
             "video_file": str(path.relative_to(ROOT)), "status": "VIDEO_READY",
-            "stage": "AI_ANALYSIS", "attempts": "0", "error": "",
+            "stage": "AI_ANALYSIS", "attempts": "0", "error": "", "creator": link.get("creator", ""),
             "created_at": link.get("created_at", now_iso()), "updated_at": now_iso(),
         })
         update_record(tabs[REEL_LINK_TAB], row_number, status="VIDEO_CONVERTED", updated_at=now_iso())
@@ -538,7 +545,7 @@ def import_converted_videos(tabs: dict[str, Any]) -> int:
     return added
 
 
-def read_video_frames(video_path: Path, count: int = 8) -> list[str]:
+def read_video_frames(video_path: Path, count: int = 8, max_width: int = 768) -> list[str]:
     import cv2
 
     capture = cv2.VideoCapture(str(video_path))
@@ -556,9 +563,9 @@ def read_video_frames(video_path: Path, count: int = 8) -> list[str]:
         if not ok:
             continue
         height, width = frame.shape[:2]
-        if width > 768:
-            new_height = max(1, round(height * 768 / width))
-            frame = cv2.resize(frame, (768, new_height), interpolation=cv2.INTER_AREA)
+        if width > max_width:
+            new_height = max(1, round(height * max_width / width))
+            frame = cv2.resize(frame, (max_width, new_height), interpolation=cv2.INTER_AREA)
         ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 78])
         if ok:
             frames.append(base64.b64encode(encoded.tobytes()).decode("ascii"))
@@ -569,6 +576,7 @@ def read_video_frames(video_path: Path, count: int = 8) -> list[str]:
 
 
 def extract_audio_transcript(video_path: Path, client: OpenAI) -> str:
+    """Paid API transcription; only used when TRANSCRIBE_MODE=api."""
     try:
         import imageio_ffmpeg
     except ImportError:
@@ -589,46 +597,174 @@ def extract_audio_transcript(video_path: Path, client: OpenAI) -> str:
         return str(getattr(transcript, "text", "")).strip()
 
 
-def draft_from_video(video_path: Path, source_url: str) -> dict[str, str]:
+def get_transcript(video_path: Path, client: OpenAI) -> str:
+    """Speech in the clip, if any. Local Whisper (default) is free; 'api' is the old paid path."""
+    mode = setting("TRANSCRIBE_MODE", "local").lower()
+    if mode == "off":
+        return ""
+    if mode == "api":
+        return extract_audio_transcript(video_path, client)
+    return reelmaker.transcribe_local(video_path)
+
+
+def ai_client() -> OpenAI:
     api_key = setting("AI_API_KEY")
     if not api_key:
         raise RuntimeError("Set AI_API_KEY in .env")
-    client = OpenAI(api_key=api_key, base_url=setting("AI_BASE_URL", "https://api.openai.com/v1"))
-    frames = read_video_frames(video_path)
-    transcript = extract_audio_transcript(video_path, client)
-    content: list[dict[str, Any]] = [{
-        "type": "text",
-        "text": (
-            "These are sequential frames sampled from an authorized Instagram Reel. "
-            "Describe what is visibly happening, then create a concise, natural Instagram caption "
-            "and up to 8 relevant hashtags. Do not invent facts. Return JSON with string fields "
-            "caption and hashtags.\n\n"
-            f"Audio transcript, if available: {transcript or '[no clear speech transcript]'}\n"
-            f"Source reference: {source_url}"
-        ),
-    }]
-    content.extend({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame}"}} for frame in frames)
+    return OpenAI(api_key=api_key, base_url=setting("AI_BASE_URL", "https://api.openai.com/v1"))
+
+
+def ask_json(client: OpenAI, messages: list[dict[str, Any]]) -> dict[str, Any]:
     response = client.chat.completions.create(
         model=setting("AI_MODEL", "gpt-6-luna"),
         response_format={"type": "json_object"},
-        messages=[{
-            "role": "system",
-            "content": "Write accurate Instagram Reel captions based only on the supplied video frames and transcript.",
-        }, {"role": "user", "content": content}],
+        messages=messages,
     )
     result = json.loads(response.choices[0].message.content or "{}")
+    return result if isinstance(result, dict) else {}
+
+
+def script_lines(value: Any) -> list[tuple[str, str]]:
+    """(text the voice says, text shown on screen) for each spoken sentence."""
+    items = value if isinstance(value, list) else re.split(r"(?<=[.!?।])\s+", str(value or ""))
+    lines: list[tuple[str, str]] = []
+    for item in items:
+        if isinstance(item, dict):
+            say = reelmaker.clean_text(item.get("say") or item.get("line") or item.get("show") or "")
+            show = reelmaker.clean_text(item.get("show") or item.get("line") or "") or say
+        else:
+            say = show = reelmaker.clean_text(str(item))
+        if re.search(r"[A-Za-z]", show):
+            # Hinglish captions sometimes pick up a stray Devanagari letter, which the
+            # caption font cannot draw properly; drop it.
+            show = reelmaker.clean_text(re.sub(r"[ऀ-ॿ]+", "", show))
+        if say:
+            lines.append((say, show))
+    return lines
+
+
+def language_rules() -> str:
+    if reelmaker.is_hindi():
+        return (
+            "LANGUAGE: casual spoken Hindi, the way young Indians talk on Reels (English words mixed in are "
+            'fine). For each spoken sentence give "say": the sentence fully in Devanagari script (write English '
+            'words in Devanagari too, so a Hindi voice reads it naturally) and "show": the exact same sentence in '
+            "Hinglish using Roman letters, for the on-screen captions. Write hook and caption in Hinglish "
+            "(Roman letters)."
+        )
+    language = setting("COMMENTARY_LANGUAGE", "English")
+    return f'LANGUAGE: {language}. For each spoken sentence give "say" and "show" as the same sentence.'
+
+
+SLANG_LEVELS = {
+    "off": "SWEARING: none; keep it clean.",
+    "mild": ("SWEARING: drop 1-2 mild desi swear or slang words where they land as a joke, for example saala, "
+             "abe, kamina, bakwaas, pagal, ullu ka pattha, ghanta, bawaal."),
+    "strong": ("SWEARING: use 2-3 Hindi gaali as funny reactions across the intro and outro, and at least "
+               "one of the stronger ones: chutiyapa, bakchodi, gaand phat gayi. Lighter ones you can add: "
+               "saala, kamina, ghanta, bawaal."),
+}
+SLANG_LIMITS = (
+    "Swear words go only in the spoken script, never in the hook, caption or hashtags. Use them as a reaction "
+    "to the situation, never as an insult aimed at a real person in the clip. Never use slurs about caste, "
+    "religion, region, gender, sexuality, disability or skin colour, and never gaali about anyone's mother or "
+    "sister. If children appear in the clip or the topic is about children, keep the whole script clean."
+)
+
+
+def slang_rules() -> str:
+    level = setting("SLANG_LEVEL", "off").lower()
+    if level not in SLANG_LEVELS or level == "off":
+        return SLANG_LEVELS["off"]
+    return f"{SLANG_LEVELS[level]} {SLANG_LIMITS}"
+
+
+def credit_line(creator: str) -> str:
+    creator = creator.strip().lstrip("@")
+    return f"\U0001F3A5 Credit: @{creator}" if creator else "\U0001F3A5 Credit: original creator"
+
+
+def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
+    """One AI call per Reel: caption, hashtags, on-screen hook, spoken intro and spoken ending."""
+    client = ai_client()
+    detail = setting("AI_IMAGE_DETAIL", "low").lower()
+    frame_count = max(2, int(setting("AI_FRAME_COUNT", "6") or 6))
+    frames = read_video_frames(video_path, frame_count, max_width=512 if detail == "low" else 768)
+    transcript = get_transcript(video_path, client)
+    duration, _has_audio = reelmaker.probe(video_path)
+    by = f" (@{creator})" if creator else ""
+    content: list[dict[str, Any]] = [{
+        "type": "text",
+        "text": (
+            f"These are {len(frames)} frames, in order, from a {duration:.0f}-second video made by another "
+            f"creator{by}. You run a desi commentary account. The Reel plays like this: your voice opens "
+            "it, the clip then plays with its own sound, and your voice closes it.\n"
+            "Return JSON with:\n"
+            "- caption: 1-2 natural sentences for the post, no hashtags\n"
+            "- hashtags: 3 to 5 relevant hashtags in one space-separated string\n"
+            "- hook: on-screen title, at most 7 words, no emoji, no hashtags\n"
+            '- intro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total. Tell what '
+            "this video is about with curiosity and energy so people keep watching, but do NOT reveal the "
+            "ending or punchline.\n"
+            '- outro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total, said over the '
+            "end of the clip. React to what just happened, then ask ONE specific, easy question people will "
+            "want to answer in the comments (pick a side, rate it 1-10, what would you do, tag a friend who "
+            "does this). End by telling them to answer in the comments.\n"
+            "Talk like a funny friend reacting, not a narrator. No emoji, no hashtags. Do not invent facts "
+            "about the people shown and do not claim you filmed it.\n"
+            f"{language_rules()}\n{slang_rules()}\n\n"
+            f"Speech heard in the clip: {transcript or '[none]'}"
+        ),
+    }]
+    content.extend(
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame}", "detail": detail}}
+        for frame in frames
+    )
+    result = ask_json(client, [
+        {"role": "system", "content": "You write short, accurate, original commentary for vertical videos."},
+        {"role": "user", "content": content},
+    ])
     caption = str(result.get("caption", "")).strip()
-    hashtags = str(result.get("hashtags", "")).strip()
-    if not caption:
-        raise RuntimeError("AI returned an empty caption")
-    return {"caption": caption, "hashtags": hashtags}
+    intro = script_lines(result.get("intro"))
+    outro = script_lines(result.get("outro"))
+    if not caption or not intro or not outro:
+        raise RuntimeError("AI returned an empty caption, intro or ending")
+    return {
+        "caption": f"{caption}\n\n{credit_line(creator)}",
+        "hashtags": str(result.get("hashtags", "")).strip(),
+        "hook": str(result.get("hook", "")).strip(),
+        "intro": intro,
+        "outro": outro,
+    }
 
 
-def next_publish_slot(occupied: set[datetime]) -> datetime:
+def parse_slots(value: str) -> tuple[tuple[int, int], ...]:
+    slots: set[tuple[int, int]] = set()
+    for part in value.split(","):
+        part = part.strip()
+        if part:
+            hour, _, minute = part.partition(":")
+            slots.add((int(hour), int(minute or 0)))
+    return tuple(sorted(slots))
+
+
+def original_slots() -> tuple[tuple[int, int], ...]:
+    """Daily times kept for original Reels (needs a free Pexels or Pixabay key for stock footage)."""
+    if not reelmaker.stock_provider():
+        return ()
+    return parse_slots(setting("ORIGINAL_SLOTS", "11:00,22:00"))
+
+
+def commentary_slots() -> tuple[tuple[int, int], ...]:
+    reserved = set(original_slots())
+    return tuple(slot for slot in PUBLISH_SLOTS if slot not in reserved) or PUBLISH_SLOTS
+
+
+def next_publish_slot(occupied: set[datetime], slots: tuple[tuple[int, int], ...] = PUBLISH_SLOTS) -> datetime:
     now = local_now()
     for day_offset in range(0, 370):
         day = (now + timedelta(days=day_offset)).date()
-        for hour, minute in PUBLISH_SLOTS:
+        for hour, minute in slots:
             candidate = datetime(day.year, day.month, day.day, hour, minute, tzinfo=LOCAL_TZ)
             if candidate > now and candidate not in occupied:
                 return candidate
@@ -662,7 +798,6 @@ def analyze_converted_videos(tabs: dict[str, Any]) -> tuple[int, int]:
     for row_number, row in records(video_ws):
         if row.get("status", "").upper() != "VIDEO_READY":
             continue
-        original_path: Path | None = None
         ready_path: Path | None = None
         try:
             if row.get("job_id", "") in already_ready:
@@ -671,47 +806,48 @@ def analyze_converted_videos(tabs: dict[str, Any]) -> tuple[int, int]:
             path = Path(row.get("video_file", ""))
             if not path.is_absolute():
                 path = ROOT / path
-            original_path = path
             if not path.is_file():
                 raise RuntimeError("Converted video file was not found")
-            caption = draft_from_video(path, row.get("source_url", ""))
+            creator = row.get("creator", "").strip()
+            if not creator:
+                link_match = link_rows.get(row.get("job_id", ""))
+                creator = (link_match[1].get("creator", "") if link_match else "").strip()
+            draft = draft_from_video(path, creator)
             ready_dir = ROOT / "media" / "ready_to_post"
             ready_dir.mkdir(parents=True, exist_ok=True)
-            destination = ready_dir / f"{row['job_id']}{path.suffix.lower()}"
+            destination = ready_dir / f"{row['job_id']}.mp4"
             ready_path = destination
-            if path.resolve() != destination.resolve():
-                shutil.move(str(path), str(destination))
-            slot = next_publish_slot(occupied)
+            reelmaker.render_commentary(path, draft["intro"], draft["outro"], destination,
+                                        hook=draft["hook"], credit=creator)
+            slot = next_publish_slot(occupied, commentary_slots())
             ready_record = {
                 "job_id": row.get("job_id", ""), "source_url": row.get("source_url", ""),
                 "source_message_id": row.get("source_message_id", ""),
                 "video_file": str(destination.relative_to(ROOT)),
-                "caption": caption["caption"], "hashtags": caption["hashtags"],
+                "caption": draft["caption"], "hashtags": draft["hashtags"],
                 "scheduled_at": slot.isoformat(timespec="minutes"), "posted_url": "",
                 "status": "SCHEDULED", "stage": "PUBLISH", "attempts": "0",
                 "error": "", "created_at": row.get("created_at", now_iso()), "updated_at": now_iso(),
+                "content_type": "COMMENTARY", "creator": creator,
             }
             append_record(ready_ws, ready_record)
             already_ready.add(row.get("job_id", ""))
             occupied.add(slot)
             rows_to_remove.append(row_number)
+            keep_source(row.get("job_id", ""), path)  # kept so the Reel can be re-edited until it posts
             link_match = link_rows.get(row.get("job_id", ""))
             if link_match:
                 update_record(tabs[REEL_LINK_TAB], link_match[0], status="SCHEDULED", updated_at=now_iso())
             completed += 1
-            print(f"{row.get('job_id')}: caption ready; scheduled {slot.strftime('%Y-%m-%d %I:%M %p')} India time")
+            print(f"{row.get('job_id')}: commentary Reel ready; scheduled {slot.strftime('%Y-%m-%d %I:%M %p')} India time")
         except Exception as exc:
             if row.get("job_id", "") in already_ready:
                 # A sheet update after the Ready row was saved failed; preserve the
                 # successful job and let the next pass clean up its source row.
                 rows_to_remove.append(row_number)
                 continue
-            if ready_path and original_path and ready_path.exists() and not original_path.exists():
-                try:
-                    original_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(ready_path), str(original_path))
-                except OSError:
-                    pass
+            if ready_path:
+                ready_path.unlink(missing_ok=True)  # the raw download stays for retry-analysis
             fail_job(tabs, row, "AI_ANALYSIS_OR_SCHEDULING", str(exc))
             update_record(video_ws, row_number, status="FAILED", error=str(exc)[:500], updated_at=now_iso())
             link_match = link_rows.get(row.get("job_id", ""))
@@ -722,6 +858,200 @@ def analyze_converted_videos(tabs: dict[str, Any]) -> tuple[int, int]:
     for row_number in sorted(rows_to_remove, reverse=True):
         video_ws.delete_rows(row_number)
     return completed, failed
+
+
+SOURCES_DIR = ROOT / "media" / "sources"
+
+
+def keep_source(job_id: str, path: Path) -> Path:
+    """Move a downloaded source clip to media/sources; the publisher deletes it once posted."""
+    SOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    target = SOURCES_DIR / f"{job_id}{path.suffix.lower() or '.mp4'}"
+    if path.resolve() != target.resolve():
+        shutil.move(str(path), str(target))
+    return target
+
+
+def source_for(job_id: str, source_url: str) -> Path:
+    """The kept source clip for a job, downloading it again from Instagram if it is gone."""
+    for existing in sorted(SOURCES_DIR.glob(f"{job_id}.*")):
+        if existing.suffix.lower() in {".mp4", ".mov"}:
+            return existing
+    import yt_dlp
+
+    SOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    options: dict[str, Any] = {"format": "best[ext=mp4]/best", "outtmpl": str(SOURCES_DIR / f"{job_id}.%(ext)s"),
+                               "quiet": True, "no_warnings": True, "noprogress": True, "noplaylist": True,
+                               "socket_timeout": 60, "max_filesize": YTDLP_MAX_VIDEO_BYTES}
+    browser = setting("YTDLP_BROWSER", "firefox").lower()
+    if browser and browser != "none":
+        options["cookiesfrombrowser"] = (browser, None, None, None)
+    with yt_dlp.YoutubeDL(options) as ydl:
+        ydl.extract_info(source_url, download=True)
+    for downloaded in sorted(SOURCES_DIR.glob(f"{job_id}.*")):
+        if downloaded.suffix.lower() in {".mp4", ".mov"}:
+            return downloaded
+    raise RuntimeError("Source clip could not be downloaded again")
+
+
+def rerender_queue() -> tuple[int, int]:
+    """Re-edit every scheduled commentary Reel with the current style, keeping its slot.
+
+    Run with the worker stopped, so row numbers do not shift while it works.
+    """
+    ready_ws = ensure_tabs()[READY_TAB]
+    done = failed = 0
+    for row_number, row in records(ready_ws):
+        if (row.get("status", "").strip().upper() != "SCHEDULED"
+                or row.get("content_type", "").strip().upper() != "COMMENTARY"):
+            continue
+        job_id = row.get("job_id", "")
+        try:
+            source = source_for(job_id, row.get("source_url", ""))
+            creator = row.get("creator", "").strip()
+            draft = draft_from_video(source, creator)
+            destination = ROOT / "media" / "ready_to_post" / f"{job_id}-{int(time.time())}.mp4"
+            reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
+                                        hook=draft["hook"], credit=creator)
+            update_record(ready_ws, row_number, video_file=str(destination.relative_to(ROOT)),
+                          caption=draft["caption"], hashtags=draft["hashtags"], updated_at=now_iso())
+            old = Path(row.get("video_file", "").strip())
+            old = old if old.is_absolute() else ROOT / old
+            if old.is_file() and old.resolve() != destination.resolve():
+                old.unlink()
+            done += 1
+            print(f"{job_id}: re-edited for {row.get('scheduled_at', '')}")
+        except Exception as exc:
+            failed += 1
+            print(f"{job_id}: kept the previous version ({type(exc).__name__}: {str(exc)[:150]})")
+    return done, failed
+
+
+def creator_from_url(source_url: str) -> str:
+    """Look up the original creator's username without downloading the video again."""
+    try:
+        import yt_dlp
+
+        options: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True, "socket_timeout": 30}
+        browser = setting("YTDLP_BROWSER", "firefox").lower()
+        if browser and browser != "none":
+            options["cookiesfrombrowser"] = (browser, None, None, None)
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(source_url, download=False)
+        return str(info.get("channel") or "").strip()
+    except Exception:
+        return ""
+
+
+def upgrade_raw_ready_rows(tabs: dict[str, Any]) -> int:
+    """Add commentary to Reels queued before this step existed, keeping their scheduled slot."""
+    ready_ws = tabs[READY_TAB]
+    limit = max(1, int(setting("UPGRADE_PER_PASS", "2") or 2))
+    pending = [
+        (number, row) for number, row in records(ready_ws)
+        if row.get("status", "").strip().upper() == "SCHEDULED"
+        and row.get("content_type", "").strip().upper() not in PUBLISHABLE_TYPES
+    ]
+    pending.sort(key=lambda item: item[1].get("scheduled_at", ""))
+    upgraded = 0
+    for row_number, row in pending[:limit]:
+        job_id = row.get("job_id", "")
+        source = Path(row.get("video_file", "").strip())
+        if not source.is_absolute():
+            source = ROOT / source
+        try:
+            if not source.is_file():
+                raise RuntimeError("Queued video file was not found")
+            creator = row.get("creator", "").strip() or creator_from_url(row.get("source_url", ""))
+            draft = draft_from_video(source, creator)
+            destination = source.with_name(f"{job_id}-commentary.mp4")
+            reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
+                                        hook=draft["hook"], credit=creator)
+            update_record(
+                ready_ws, row_number, video_file=str(destination.relative_to(ROOT)),
+                caption=draft["caption"], hashtags=draft["hashtags"], content_type="COMMENTARY",
+                creator=creator, error="", updated_at=now_iso(),
+            )
+            keep_source(job_id, source)
+            upgraded += 1
+            print(f"{job_id}: commentary added; keeps its {row.get('scheduled_at', '')} slot")
+        except Exception as exc:
+            update_record(ready_ws, row_number, status="FAILED",
+                          error=f"Commentary step failed: {exc}"[:500], updated_at=now_iso())
+            print(f"{job_id}: commentary step failed; it will move to Failed Links")
+    return upgraded
+
+
+ORIGINAL_BACKOFF = ROOT / ".original-failed-at"
+
+
+def plan_original(client: OpenAI, recent_topics: list[str]) -> dict[str, Any]:
+    niche = setting("ORIGINAL_NICHE", "funny and surprising facts about animals, kids, food and everyday life")
+    avoid = "; ".join(recent_topics[-40:]) or "none yet"
+    result = ask_json(client, [
+        {"role": "system", "content": "You plan short, original, factual vertical videos for Instagram Reels."},
+        {"role": "user", "content": (
+            f"Plan one original 20-40 second Reel for an account about: {niche}.\n"
+            f"Pick a fresh topic that is not one of these recent topics: {avoid}.\n"
+            "Return JSON with:\n"
+            "- topic: 3-6 words\n"
+            "- hook: on-screen title, at most 7 words, no emoji\n"
+            "- caption: 1-2 sentences for the post, no hashtags\n"
+            "- hashtags: 3 to 5 hashtags in one space-separated string\n"
+            '- scenes: 5 to 7 items, each {"say", "show": one spoken sentence of 8-18 words, "search": a '
+            "2-4 word English stock-footage search that shows that sentence literally}\n"
+            "The first sentence is a strong hook and the last asks viewers a question. Use only well-known, "
+            "true facts and no made-up numbers. No emoji. Keep search terms in English.\n"
+            f"{language_rules()}\n{slang_rules()}"
+        )},
+    ])
+    scenes = [s for s in result.get("scenes", []) if isinstance(s, dict) and (s.get("say") or s.get("line"))]
+    if not str(result.get("caption", "")).strip() or len(scenes) < 3:
+        raise RuntimeError("AI returned an incomplete original Reel plan")
+    result["scenes"] = scenes
+    return result
+
+
+def produce_original_reels(tabs: dict[str, Any]) -> int:
+    """Fill the next free original slot (within the lookahead) with a fully original Reel."""
+    slots = original_slots()
+    if not slots:
+        return 0
+    if ORIGINAL_BACKOFF.exists() and time.time() - ORIGINAL_BACKOFF.stat().st_mtime < 1800:
+        return 0
+    ready_ws = tabs[READY_TAB]
+    slot = next_publish_slot(existing_slots(ready_ws), slots)
+    lookahead = timedelta(hours=max(1, int(setting("ORIGINAL_LOOKAHEAD_HOURS", "36") or 36)))
+    if slot > local_now() + lookahead:
+        return 0
+    recent = [row.get("topic", "").strip() for tab in (READY_TAB, POSTED_TAB)
+              for _, row in records(tabs[tab]) if row.get("topic", "").strip()]
+    destination: Path | None = None
+    try:
+        plan = plan_original(ai_client(), recent)
+        topic = str(plan.get("topic", "")).strip()
+        digest = hashlib.sha256(f"{slot.isoformat()}|{topic}".encode("utf-8")).hexdigest()[:12].upper()
+        job_id = f"OG-{digest}"
+        destination = ROOT / "media" / "ready_to_post" / f"{job_id}.mp4"
+        reelmaker.render_original(plan, destination)
+        append_record(ready_ws, {
+            "job_id": job_id, "source_url": "", "source_message_id": "",
+            "video_file": str(destination.relative_to(ROOT)),
+            "caption": str(plan.get("caption", "")).strip(), "hashtags": str(plan.get("hashtags", "")).strip(),
+            "scheduled_at": slot.isoformat(timespec="minutes"), "posted_url": "",
+            "status": "SCHEDULED", "stage": "PUBLISH", "attempts": "0", "error": "",
+            "created_at": now_iso(), "updated_at": now_iso(),
+            "content_type": "ORIGINAL", "creator": "", "topic": topic,
+        })
+    except Exception as exc:
+        if destination:
+            destination.unlink(missing_ok=True)
+        ORIGINAL_BACKOFF.write_text(now_iso(), encoding="utf-8")
+        print(f"Original Reel failed ({type(exc).__name__}: {str(exc)[:200]}); will retry in 30 minutes")
+        return 0
+    ORIGINAL_BACKOFF.unlink(missing_ok=True)
+    print(f"{job_id}: original Reel '{topic}' scheduled {slot.strftime('%Y-%m-%d %I:%M %p')} India time")
+    return 1
 
 
 def collect_declared_conversion_failures(tabs: dict[str, Any]) -> int:
@@ -758,6 +1088,16 @@ def run_once(tabs: dict[str, Any] | None = None, *, publish: bool = True) -> Non
             print(f"Download failures routed: {declared_failed + download_failed}")
     except Exception as exc:
         print(f"Pipeline pass failed ({type(exc).__name__})")
+    try:
+        upgraded = upgrade_raw_ready_rows(tabs)
+        if upgraded:
+            print(f"Commentary added to {upgraded} queued Reel(s)")
+    except Exception as exc:
+        print(f"Commentary upgrade pass failed ({type(exc).__name__})")
+    try:
+        produce_original_reels(tabs)
+    except Exception as exc:
+        print(f"Original Reel pass failed ({type(exc).__name__})")
     if not publish:
         return
     try:
@@ -773,10 +1113,40 @@ def run_once(tabs: dict[str, Any] | None = None, *, publish: bool = True) -> Non
 def main() -> None:
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Process Reel links and converted videos")
-    parser.add_argument("command", choices=["setup", "once", "prepare", "run", "retry-downloads", "retry-analysis"])
+    parser.add_argument("command", choices=[
+        "setup", "setup-voice", "once", "prepare", "run", "retry-downloads", "retry-analysis",
+        "preview", "preview-original", "rerender",
+    ])
     parser.add_argument("--poll-seconds", type=int, default=180)
+    parser.add_argument("--video", help="preview: local video to turn into a commentary Reel")
+    parser.add_argument("--creator", default="", help="preview: original creator's Instagram username")
     args = parser.parse_args()
-    if args.command == "setup":
+    if args.command == "setup-voice":
+        reelmaker.download_voice_model()
+        print("Voice model is ready.")
+    elif args.command == "preview":
+        # Renders to media/preview without touching the sheet or Instagram.
+        if not args.video:
+            parser.error("preview needs --video PATH")
+        source = Path(args.video).resolve()
+        draft = draft_from_video(source, args.creator)
+        out = reelmaker.render_commentary(
+            source, draft["intro"], draft["outro"], ROOT / "media" / "preview" / f"{source.stem}-commentary.mp4",
+            hook=draft["hook"], credit=args.creator,
+        )
+        shown = {"hook": draft["hook"], "intro": [s for _x, s in draft["intro"]], "outro": [s for _x, s in draft["outro"]],
+                 "caption": draft["caption"], "hashtags": draft["hashtags"]}
+        print(json.dumps(shown, indent=2, ensure_ascii=True))
+        print(f"Preview saved: {out}")
+    elif args.command == "rerender":
+        done, failed = rerender_queue()
+        print(f"Re-edited {done} scheduled Reel(s); {failed} kept their previous version.")
+    elif args.command == "preview-original":
+        plan = plan_original(ai_client(), [])
+        out = reelmaker.render_original(plan, ROOT / "media" / "preview" / "original-preview.mp4")
+        print(json.dumps(plan, indent=2, ensure_ascii=True))
+        print(f"Preview saved: {out}")
+    elif args.command == "setup":
         ensure_tabs()
         for folder in (ROOT / "media" / "video_convert", ROOT / "media" / "ready_to_post"):
             folder.mkdir(parents=True, exist_ok=True)

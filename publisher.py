@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import time
 from datetime import datetime, time as wall_time, timedelta, timezone
 from pathlib import Path
@@ -16,7 +17,8 @@ import gspread
 from dotenv import load_dotenv
 
 from app import HEADERS, connect_sheet, now_iso
-from pipeline import FAILED_TAB, POSTED_TAB, READY_TAB, REJECTED_TAB, append_record, ensure_tabs, job_id_for, records
+from pipeline import (FAILED_TAB, POSTED_TAB, PUBLISHABLE_TYPES, READY_TAB, REJECTED_TAB, append_record,
+                      ensure_tabs, job_id_for)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -25,6 +27,7 @@ PUBLISH_TIMES = (wall_time(11, 0), wall_time(18, 0), wall_time(22, 0), wall_time
 MAX_VIDEO_BYTES = 1024 * 1024 * 1024
 POLL_SECONDS = 3
 POLL_ATTEMPTS = 30
+VALID_USERNAME = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 
 
 class PublishError(RuntimeError):
@@ -181,17 +184,26 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
 
     # Mark in progress before making remote calls to avoid duplicate posts on a retry.
     update_fields(worksheet, headers, row_number, status="PUBLISHING", error="", updated_at=now_iso())
-    container = graph_call(
-        "POST",
-        f"{instagram_id}/media",
-        token,
-        data={
-            "media_type": "REELS",
-            "upload_type": "resumable",
-            "caption": caption,
-            "share_to_feed": "true",
-        },
-    )
+    container_data = {
+        "media_type": "REELS",
+        "upload_type": "resumable",
+        "caption": caption,
+        "share_to_feed": "true",
+    }
+    # Invite the clip's original creator to collaborate, as Instagram's own
+    # unoriginal-content notice recommends. If Meta refuses the invite (private
+    # account, unknown username), post without it rather than failing the Reel.
+    creator = values.get("creator", "").strip().lstrip("@")
+    invite = setting("INVITE_CREATOR_COLLAB").lower() not in {"0", "false", "no", "off"}
+    container = None
+    if invite and VALID_USERNAME.match(creator):
+        try:
+            container = graph_call("POST", f"{instagram_id}/media", token,
+                                   data={**container_data, "collaborators": json.dumps([creator])})
+        except PublishError as exc:
+            print(f"Row {row_number}: collab invite to @{creator} was refused ({exc}); posting with caption credit only")
+    if container is None:
+        container = graph_call("POST", f"{instagram_id}/media", token, data=container_data)
     container_id = str(container.get("id", ""))
     upload_uri = str(container.get("uri", ""))
     if not container_id or not upload_uri:
@@ -296,9 +308,18 @@ def publish_due_rows(tabs=None) -> int:
             scheduled = read_schedule(values.get("scheduled_at", ""))
             if not scheduled or scheduled > now:
                 continue
+            if (values.get("content_type", "").strip().upper() not in PUBLISHABLE_TYPES
+                    and setting("ALLOW_RAW_REPOSTS").lower() not in {"1", "true", "yes"}):
+                # Never re-upload someone else's clip unchanged; the pipeline adds
+                # commentary to these rows first, then they publish on the next pass.
+                print(f"Row {row_number}: held back until commentary is added (raw repost)")
+                continue
             try:
                 publish_one(worksheet, headers, row_number, values)
                 published_count += 1
+                # The kept source clip was only needed for re-edits before posting.
+                for kept in (ROOT / "media" / "sources").glob(f"{values.get('job_id', '').strip() or '-'}.*"):
+                    kept.unlink(missing_ok=True)
             except Exception as exc:
                 update_fields(
                     worksheet,
