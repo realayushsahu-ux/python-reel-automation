@@ -76,7 +76,9 @@ def connect_book():
         raise RuntimeError("Set GOOGLE_SHEET_ID in .env")
     if not credentials.is_file():
         raise RuntimeError("Google service account JSON file was not found")
-    return gspread.service_account(filename=str(credentials)).open_by_key(sheet_id)
+    # BackOffHTTPClient waits and retries Google's quota (429) and server (5xx) errors
+    # instead of failing the whole pass with APIError.
+    return gspread.service_account(filename=str(credentials), http_client=gspread.BackOffHTTPClient).open_by_key(sheet_id)
 
 
 def ensure_tabs(book=None) -> dict[str, Any]:

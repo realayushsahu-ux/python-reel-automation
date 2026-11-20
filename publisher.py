@@ -25,8 +25,14 @@ ROOT = Path(__file__).resolve().parent
 INDIA = timezone(timedelta(hours=5, minutes=30))
 PUBLISH_TIMES = (wall_time(11, 0), wall_time(18, 0), wall_time(22, 0), wall_time(23, 0))
 MAX_VIDEO_BYTES = 1024 * 1024 * 1024
-POLL_SECONDS = 3
-POLL_ATTEMPTS = 30
+POLL_SECONDS = 5
+POLL_ATTEMPTS = 72  # up to 6 minutes for Meta to process a long Reel
+# A Reel that hits an internet drop or a Meta hiccup is tried again this many
+# minutes later, up to PUBLISH_MAX_TRIES times, before it goes to the failed tab.
+RETRY_MINUTES = 10
+PUBLISH_MAX_TRIES = 6
+# A row left in PUBLISHING (PC turned off mid-upload) is checked after this long.
+STUCK_MINUTES = 20
 VALID_USERNAME = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 
 
@@ -53,22 +59,45 @@ def load_access_token() -> str:
     return str(token)
 
 
-def graph_call(method: str, endpoint: str, token: str, **kwargs: Any) -> dict[str, Any]:
+class TemporaryPublishError(PublishError):
+    """A network drop or a short Meta outage: the Reel should be tried again later."""
+
+
+# Meta error codes that mean "busy / try again": unknown, service, rate limits.
+TRANSIENT_META_CODES = {1, 2, 4, 17, 32, 341, 368, 613}
+
+
+def graph_call(method: str, endpoint: str, token: str, *, tries: int = 4, **kwargs: Any) -> dict[str, Any]:
+    """Call the Graph API, retrying network drops and temporary Meta errors.
+
+    Pass tries=1 for calls that must never be sent twice (media_publish)."""
     url = f"https://graph.facebook.com/{graph_version()}/{endpoint.lstrip('/')}"
     params = kwargs.pop("params", {})
     params["access_token"] = token
-    try:
-        response = requests.request(method, url, params=params, timeout=45, **kwargs)
-    except requests.RequestException as exc:
-        raise PublishError("Could not reach Meta's publishing API") from exc
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise PublishError(f"Meta returned HTTP {response.status_code} with an unreadable response") from exc
-    if not response.ok or "error" in data:
-        message = data.get("error", {}).get("message", f"Meta returned HTTP {response.status_code}")
-        raise PublishError(str(message)[:400])
-    return data
+    problem: PublishError = TemporaryPublishError("Could not reach Meta's publishing API")
+    for attempt in range(1, max(1, tries) + 1):
+        if attempt > 1:
+            time.sleep(min(60, 5 * 2 ** (attempt - 2)))
+        try:
+            response = requests.request(method, url, params=params, timeout=60, **kwargs)
+        except requests.RequestException as exc:
+            problem = TemporaryPublishError("Could not reach Meta's publishing API")
+            problem.__cause__ = exc
+            continue
+        try:
+            data = response.json()
+        except ValueError:
+            problem = TemporaryPublishError(f"Meta returned HTTP {response.status_code} with an unreadable response")
+            continue
+        if response.ok and "error" not in data:
+            return data
+        error = data.get("error", {}) if isinstance(data.get("error"), dict) else {}
+        message = str(error.get("message", f"Meta returned HTTP {response.status_code}"))[:400]
+        if error.get("is_transient") or error.get("code") in TRANSIENT_META_CODES or response.status_code >= 500:
+            problem = TemporaryPublishError(message)
+            continue
+        raise PublishError(message)
+    raise problem
 
 
 def read_schedule(value: str) -> datetime | None:
@@ -200,6 +229,8 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
         try:
             container = graph_call("POST", f"{instagram_id}/media", token,
                                    data={**container_data, "collaborators": json.dumps([creator])})
+        except TemporaryPublishError:
+            raise  # internet/Meta outage, not a refused invite: try the whole Reel later
         except PublishError as exc:
             print(f"Row {row_number}: collab invite to @{creator} was refused ({exc}); posting with caption credit only")
     if container is None:
@@ -213,7 +244,7 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
     # keeps the container valid, but a non-retriable Meta error (ProcessingFailedError)
     # spoils it, so then start over with a fresh container before sending again.
     last_problem = ""
-    for attempt in range(1, 4):
+    for attempt in range(1, 5):
         if attempt > 1 and '"retriable":false' in last_problem.replace(" ", ""):
             container = graph_call("POST", f"{instagram_id}/media", token, data=container_data)
             container_id = str(container.get("id", ""))
@@ -241,37 +272,37 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
         print(f"Row {row_number}: upload attempt {attempt} failed ({last_problem}); retrying")
         time.sleep(10 * attempt)
     else:
-        raise PublishError(f"Video upload to Meta failed after 3 attempts ({last_problem})"[:400])
+        raise TemporaryPublishError(f"Video upload to Meta failed after 4 attempts ({last_problem})"[:400])
 
     status = ""
     for _ in range(POLL_ATTEMPTS):
-        # A short internet drop while waiting must not fail an already uploaded Reel.
-        try:
-            status_data = graph_call(
-                "GET", container_id, token, params={"fields": "status_code,status"}
-            )
-        except PublishError as exc:
-            if "Could not reach" not in str(exc):
-                raise
-            print(f"Row {row_number}: network blip while Meta processes the video; checking again")
-            time.sleep(POLL_SECONDS)
-            continue
+        # graph_call already rides out short internet drops while Meta processes the video.
+        status_data = graph_call("GET", container_id, token, params={"fields": "status_code,status"})
         status = str(status_data.get("status_code", ""))
         if status == "FINISHED":
             break
         if status in {"ERROR", "EXPIRED"}:
-            raise PublishError("Meta could not process the uploaded video")
+            raise TemporaryPublishError("Meta could not process the uploaded video")
         time.sleep(POLL_SECONDS)
     else:
-        raise PublishError("Meta is still processing the video; no publish request was sent")
+        raise TemporaryPublishError("Meta is still processing the video; no publish request was sent")
 
-    published = graph_call(
-        "POST",
-        f"{instagram_id}/media_publish",
-        token,
-        data={"creation_id": container_id},
-    )
-    media_id = str(published.get("id", ""))
+    # media_publish is never blindly re-sent: if the answer is lost, ask Meta whether
+    # this container went live before trying again, so a Reel is never posted twice.
+    media_id = ""
+    for attempt in range(1, 4):
+        try:
+            published = graph_call("POST", f"{instagram_id}/media_publish", token,
+                                   tries=1, data={"creation_id": container_id})
+            media_id = str(published.get("id", ""))
+            break
+        except TemporaryPublishError:
+            time.sleep(15 * attempt)
+            check = graph_call("GET", container_id, token, params={"fields": "status_code"})
+            if str(check.get("status_code", "")) == "PUBLISHED":
+                break
+            if attempt == 3:
+                raise
     permalink = ""
     if media_id:
         try:
@@ -288,6 +319,28 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
         updated_at=now_iso(),
     )
     print(f"Row {row_number}: published successfully")
+
+
+def recover_stuck_row(worksheet, headers: list[str], row_number: int, values: dict[str, str],
+                      now: datetime) -> None:
+    """A row left in PUBLISHING means the worker stopped mid-post (PC off, crash).
+    If Instagram already shows the Reel, mark it POSTED; otherwise queue it again."""
+    started = read_schedule(values.get("updated_at", ""))
+    if started and now - started < timedelta(minutes=STUCK_MINUTES):
+        return  # still being posted right now
+    caption = values.get("caption", "").strip()
+    token = load_access_token()
+    recent = graph_call("GET", f"{setting('META_INSTAGRAM_ACCOUNT_ID')}/media", token,
+                        params={"fields": "caption,permalink,timestamp", "limit": "10"})
+    for media in recent.get("data", []):
+        if caption and str(media.get("caption", "")).strip().startswith(caption[:80]):
+            update_fields(worksheet, headers, row_number, status="POSTED", error="",
+                          posted_url=str(media.get("permalink", "")), updated_at=now_iso())
+            print(f"Row {row_number}: interrupted upload was already live; marked as posted")
+            return
+    update_fields(worksheet, headers, row_number, status="SCHEDULED",
+                  error="Retrying: the previous upload was interrupted", updated_at=now_iso())
+    print(f"Row {row_number}: previous upload was interrupted; it will be posted again")
 
 
 def publish_due_rows(tabs=None) -> int:
@@ -328,10 +381,19 @@ def publish_due_rows(tabs=None) -> int:
                 except Exception:
                     print(f"Row {row_number}: failed, but archive transfer will retry")
                 continue
+            if current_status == "PUBLISHING":
+                try:
+                    recover_stuck_row(worksheet, headers, row_number, values, now)
+                except Exception as exc:
+                    print(f"Row {row_number}: could not check the interrupted upload yet ({type(exc).__name__})")
+                continue
             if current_status != "SCHEDULED":
                 continue
             scheduled = read_schedule(values.get("scheduled_at", ""))
             if not scheduled or scheduled > now:
+                continue
+            last_try = read_schedule(values.get("updated_at", "")) if values.get("error", "").startswith("Retrying") else None
+            if last_try and now - last_try < timedelta(minutes=RETRY_MINUTES):
                 continue
             if (values.get("content_type", "").strip().upper() not in PUBLISHABLE_TYPES
                     and setting("ALLOW_RAW_REPOSTS").lower() not in {"1", "true", "yes"}):
@@ -346,6 +408,18 @@ def publish_due_rows(tabs=None) -> int:
                 for kept in (ROOT / "media" / "sources").glob(f"{values.get('job_id', '').strip() or '-'}.*"):
                     kept.unlink(missing_ok=True)
             except Exception as exc:
+                tries = int(values.get("attempts", "0") or 0) + 1
+                temporary = isinstance(exc, (TemporaryPublishError, requests.RequestException,
+                                             gspread.exceptions.APIError, OSError))
+                if temporary and tries < PUBLISH_MAX_TRIES:
+                    try:
+                        update_fields(worksheet, headers, row_number, status="SCHEDULED", attempts=str(tries),
+                                      error=f"Retrying ({tries}/{PUBLISH_MAX_TRIES}): {exc}"[:500],
+                                      updated_at=now_iso())
+                    except Exception:
+                        pass  # the row stays PUBLISHING and is recovered on a later pass
+                    print(f"Row {row_number}: temporary problem ({exc}); trying again in {RETRY_MINUTES} minutes")
+                    continue
                 update_fields(
                     worksheet,
                     headers,

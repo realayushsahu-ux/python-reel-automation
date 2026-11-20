@@ -42,7 +42,7 @@ def connect_sheet():
     if not Path(credentials_file).is_file():
         raise RuntimeError(f"Google service account file not found: {credentials_file}")
 
-    client = gspread.service_account(filename=credentials_file)
+    client = gspread.service_account(filename=credentials_file, http_client=gspread.BackOffHTTPClient)
     worksheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
     existing = worksheet.row_values(1)
     if not existing:
