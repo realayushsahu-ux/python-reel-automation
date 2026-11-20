@@ -15,13 +15,13 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 - Downloads accessible Reels locally with `yt-dlp` and an optional signed-in Firefox session.
 - Samples six low-detail, timestamped frames with OpenCV and transcribes speech locally with faster-whisper (free; music-only clips return nothing).
 - Makes one AI call per Reel for the caption, hashtags, an on-screen hook and a short commentary script.
-- Renders a **commentary Reel** locally in three beats: a spoken intro that teases what the clip is about, the clip with its own sound, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
+- Renders a **commentary-first Reel** locally in three beats: a spoken intro that sets up the story, only the key ~7 seconds of the clip framed on the account's own animated background with live reactions, and a spoken ending that reacts and asks viewers a question to answer in the comments. Word-timed captions, a hook title and an `@creator` credit are burned in.
 - Voices it like a comedian, not a narrator: the AI writes short punchy beats, each sentence gets its own tone (excited, questioning), and `...` becomes a comic pause. It uses a free Microsoft Edge neural voice (`TTS_ENGINE=edge`, default Ava) and redoes a Reel with the offline Kokoro voice if Edge is down.
 - Speaks English or Hindi (`COMMENTARY_LANGUAGE=Hindi`: Hindi voice, Hinglish captions). The AI picks a male or female narrator per clip.
 - Reacts to the moment: the same single AI call sees timestamped frames and drops up to two short reactions (`MAX_REACTIONS`) right after the action they react to.
 - Picks slang and gaali only from `data/hindi_hinglish_vocabulary.json`, matched to the scene, at the chosen intensity (`SLANG_LEVEL=clean|mild|medium|strong`, default mild). Every word is validated against that list, `BLOCKED_TERMS` are never used, recently used terms are not repeated for five Reels, and any line with a non-allowed word is dropped. Slang stays out of the hook, caption and hashtags, and the whole Reel stays clean when children are on screen.
 - Credits the original creator in the caption and invites them as a collaborator when publishing.
-- Optionally fills reserved slots with **original Reels**: an AI script and voiceover over free Pixabay or Pexels stock footage.
+- Fills the 11 AM and 10 PM slots with **original Reels**: an AI-written Hindi script and voiceover over the account's own animated background with big headlines, or over free Pixabay or Pexels stock footage when a key is set.
 - Refuses to publish a raw, unchanged re-upload; Reels queued before the commentary step get commentary added and keep their slot.
 - Schedules each ready Reel in the next available India-time slot: **11:00, 18:00, 22:00, or 23:00 Asia/Kolkata**.
 - Publishes due Reels through Meta's Instagram Graph API and archives the result.
@@ -30,7 +30,7 @@ ReelFlow AI connects Instagram messaging, a Google Sheets queue, local video pro
 
 ## Why commentary and original Reels
 
-Instagram stops recommending accounts that mostly re-upload other people's clips ("unoriginal content"). Small edits such as crops, borders, speed changes or a caption credit do not count as original. Added commentary and voiceover do, and an account becomes eligible again once most of its posts from the last 30 days are original. So the pipeline never posts a clip unchanged: every downloaded Reel gets a voiceover, and the optional original Reels keep the account's mix original.
+Instagram stops recommending accounts that mostly re-upload other people's clips ("unoriginal content"). Small edits such as crops, borders, speed changes or a caption credit do not count as original. Added commentary and voiceover do, and an account becomes eligible again once most of its posts from the last 30 days are original. So the pipeline never posts a clip unchanged: every downloaded Reel shows only its key moment inside a commentary Reel, and half of the daily slots are fully original Reels.
 
 ## Workflow
 
@@ -105,7 +105,7 @@ To try the commentary step on any local clip without touching the sheet or Insta
 .\.venv\Scripts\python.exe pipeline.py preview --video media\clip.mp4 --creator their_username
 ```
 
-For original Reels, create a free Pixabay account and copy the key shown at https://pixabay.com/api/docs/ into `PIXABAY_API_KEY` in `.env` (a Pexels key in `PEXELS_API_KEY` also works, but Pexels paused new keys in November 2026), and choose `ORIGINAL_SLOTS` and `ORIGINAL_NICHE`. `pipeline.py preview-original` renders a sample. Without a key, every slot is a commentary Reel.
+For original Reels, create a free Pixabay account and copy the key shown at https://pixabay.com/api/docs/ into `PIXABAY_API_KEY` in `.env` (a Pexels key in `PEXELS_API_KEY` also works, but Pexels paused new keys in November 2026), and choose `ORIGINAL_SLOTS` and `ORIGINAL_NICHE`. `pipeline.py preview-original` renders a sample. Without a key, original Reels use a generated animated background with big headlines; set `ORIGINAL_SLOTS` empty to post commentary Reels only.
 
 After changing the voice or style, re-edit everything already scheduled (stop the worker first so sheet rows do not move; each Reel keeps its slot):
 

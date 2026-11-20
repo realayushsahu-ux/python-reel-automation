@@ -392,8 +392,13 @@ def text_image(path: Path, text: str, size: int, *, fill=(255, 255, 255, 255),
 
 def compose(base_video: Path, voice_wav: Path, spoken: list[Cue], out_path: Path, work: Path, *,
             hook: str = "", credit: str = "", voice_delay: float = 0.3,
-            keep_source_audio: bool = True) -> Path:
-    """Lay the voiceover, captions, hook title and credit tag over a 9:16 version of the clip."""
+            keep_source_audio: bool = True, caption_y=None, credit_at: str = "x=40:y=H-h-360",
+            extra: list[tuple[Path, str]] | None = None) -> Path:
+    """Lay the voiceover, captions, hook title and credit tag over a 9:16 version of the clip.
+
+    caption_y: optional function (seconds) -> (y, font size) for where captions sit at that
+    moment; extra: more (png, overlay options) stickers to draw.
+    """
     duration, has_audio = probe(base_video)
     with wave.open(str(voice_wav), "rb") as handle:
         voice_seconds = handle.getnframes() / handle.getframerate()
@@ -410,11 +415,13 @@ def compose(base_video: Path, voice_wav: Path, spoken: list[Cue], out_path: Path
     if credit:
         png = text_image(work / "credit.png", f"via @{credit}", 34, stroke=0,
                          background=(0, 0, 0, 150), pad=14)
-        images.append((png, "x=40:y=H-h-360"))
+        images.append((png, credit_at))
+    images += list(extra or [])
     for index, cue in enumerate(caption_cues(spoken)):
-        png = text_image(work / f"cue{index:03d}.png", cue.text, 76, stroke=7)
         start, end = cue.start + voice_delay, cue.end + voice_delay
-        images.append((png, f"x=(W-w)/2:y=1150:enable='between(t,{start:.3f},{end:.3f})'"))
+        y, size = caption_y(start) if caption_y else (1150, 76)
+        png = text_image(work / f"cue{index:03d}.png", cue.text, size, stroke=7)
+        images.append((png, f"x=(W-w)/2:y={y}:enable='between(t,{start:.3f},{end:.3f})'"))
 
     inputs: list[str] = ["-i", str(base_video), "-i", str(voice_wav)]
     for png, _ in images:
@@ -465,12 +472,34 @@ def compose(base_video: Path, voice_wav: Path, spoken: list[Cue], out_path: Path
     return out_path
 
 
+PALETTES = [("0x1b1b3a", "0xb8325a"), ("0x0f3460", "0x12876a"), ("0x2d0b59", "0xb34a1f"),
+            ("0x101820", "0x7a5c00"), ("0x003049", "0x9b1c1c"), ("0x23074d", "0x007a99")]
+
+
+def brand_background(seconds: float, out: Path, seed: int = 0) -> Path:
+    """Our own moving gradient background (made here, nobody else's footage)."""
+    c0, c1 = PALETTES[seed % len(PALETTES)]
+    run_ffmpeg([
+        "-f", "lavfi", "-i",
+        f"gradients=s={WIDTH}x{HEIGHT}:c0={c0}:c1={c1}:x0=0:y0=0:x1={WIDTH}:y1={HEIGHT}"
+        f":speed=0.015:rate={FPS}:duration={seconds:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", str(out),
+    ])
+    return out
+
+
+def _seed(text: str) -> int:
+    return sum(map(ord, text or "x"))
+
+
 def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *, hook: str, credit: str,
-                      reactions: list | tuple = (), voice: str = "") -> Path:
+                      reactions: list | tuple = (), voice: str = "", key_moment: float | None = None) -> Path:
     """Commentary Reel: a spoken intro on what the clip is about, the clip with its own sound
     plus short reactions at the moments they react to, and a spoken ending that asks viewers
     to comment; plus captions, hook and creator credit.
 
+    REEL_FORMAT=studio (default): only the key moment of the clip (CLIP_MAX_SECONDS) is shown,
+    framed inside our own layout, and the commentary is most of the Reel. full: whole clip.
     reactions: [(seconds into the clip, (say, show)), ...]; voice: "male", "female" or "".
     """
     global _NARRATOR
@@ -483,6 +512,9 @@ def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *,
                      [(moment, speak_lines([line])) for moment, line in sorted(reactions, key=lambda r: r[0])]))
     finally:
         _NARRATOR = ""
+    if setting("REEL_FORMAT", "studio").lower() != "full":
+        return _render_studio(source, duration, (intro_audio, intro_cues), (outro_audio, outro_cues),
+                              beats, out_path, hook=hook, credit=credit, key_moment=key_moment)
     lead = 0.3
     segments = [(lead, intro_audio, intro_cues)]
     cursor = lead + len(intro_audio) / SAMPLE_RATE
@@ -511,6 +543,83 @@ def render_commentary(source: Path, intro: list, outro: list, out_path: Path, *,
         write_wav(samples, work / "voice.wav")
         return compose(source, work / "voice.wav", cues, out_path, work, hook=hook, credit=credit,
                        voice_delay=0.0)
+
+
+CLIP_TOP, CLIP_BOX_W, CLIP_BOX_H = 300, 940, 1040
+
+
+def _render_studio(source: Path, duration: float, intro, outro, beats, out_path: Path, *,
+                   hook: str, credit: str, key_moment: float | None) -> Path:
+    """Commentary-first Reel on our own background: spoken intro, then only the key moment of
+    the clip in a framed window with reactions, then the spoken ending and a comment prompt."""
+    intro_audio, intro_cues = intro
+    outro_audio, outro_cues = outro
+    window = max(3.0, float(setting("CLIP_MAX_SECONDS", "7") or 7))
+    if key_moment is None:
+        key_moment = beats[0][0] if beats else duration * 0.6
+    key_moment = min(max(0.0, float(key_moment)), duration)
+    if duration <= window:
+        clip_start, clip_end = 0.0, duration
+    else:  # most of the window is the build-up, the punchline near its end
+        clip_start = min(max(0.0, key_moment - 0.65 * window), duration - window)
+        clip_end = clip_start + window
+    clip_len = clip_end - clip_start
+
+    lead = 0.3
+    clip_at = lead + len(intro_audio) / SAMPLE_RATE + 0.35
+    segments = [(lead, intro_audio, intro_cues)]
+    cursor = clip_at
+    for moment, (audio, cues) in beats:
+        if not clip_start <= moment <= clip_end:
+            continue  # that moment is not in the part we show
+        start = max(clip_at + (moment - clip_start) + 0.25, cursor + 0.3)
+        segments.append((start, audio, cues))
+        cursor = start + len(audio) / SAMPLE_RATE
+    clip_shown = max(clip_len, cursor - clip_at + 0.3)  # hold the last frame for a late reaction
+    outro_at = clip_at + clip_shown + 0.25
+    outro_seconds = len(outro_audio) / SAMPLE_RATE
+    segments.append((outro_at, outro_audio, outro_cues))
+    total = outro_at + outro_seconds + 0.8
+
+    samples = np.zeros(int(total * SAMPLE_RATE), dtype=np.float32)
+    cues: list[Cue] = []
+    for start, audio, spoken in segments:
+        index = int(start * SAMPLE_RATE)
+        samples[index:index + len(audio)] += audio[:len(samples) - index]
+        cues += [Cue(c.text, c.start + start, c.end + start) for c in spoken]
+
+    def caption_y(t: float) -> tuple[int, int]:
+        # Under the clip while it plays; big in the middle when it is just us talking.
+        return (1400, 72) if clip_at - 0.05 <= t < clip_at + clip_shown else (800, 92)
+
+    with tempfile.TemporaryDirectory(prefix="reel-studio-") as temp:
+        work = Path(temp)
+        background = brand_background(total, work / "bg.mp4", _seed(hook))
+        _, has_audio = probe(source)
+        graph = (
+            f"[1:v]trim=start={clip_start:.3f}:end={clip_end:.3f},setpts=PTS-STARTPTS,fps={FPS},"
+            f"scale={CLIP_BOX_W}:{CLIP_BOX_H}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+            f"pad=iw+16:ih+16:8:8:color=white,"
+            f"tpad=stop_mode=clone:stop_duration={clip_shown - clip_len + 0.05:.3f},"
+            f"setpts=PTS+{clip_at:.3f}/TB[clip];"
+            f"[0:v][clip]overlay=x=(W-w)/2:y={CLIP_TOP}+({CLIP_BOX_H}+16-h)/2:eof_action=pass,setsar=1[v]"
+        )
+        maps = ["-map", "[v]"]
+        if has_audio:
+            delay = int(clip_at * 1000)
+            graph += (f";[1:a]atrim=start={clip_start:.3f}:end={clip_end:.3f},asetpts=PTS-STARTPTS,"
+                      f"aresample=48000,aformat=channel_layouts=stereo,adelay={delay}|{delay},apad[a]")
+            maps += ["-map", "[a]"]
+        body = work / "body.mp4"
+        run_ffmpeg(["-i", str(background), "-i", str(source), "-filter_complex", graph, *maps,
+                    "-t", f"{total:.3f}", "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
+                    "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", str(body)])
+        prompt = text_image(work / "prompt.png", "Comment mein batao!", 58, fill=(20, 20, 20, 255),
+                            stroke=0, background=(255, 214, 0, 240))
+        extra = [(prompt, f"x=(W-w)/2:y=1300:enable='between(t,{outro_at:.3f},{total:.3f})'")]
+        write_wav(samples, work / "voice.wav")
+        return compose(body, work / "voice.wav", cues, out_path, work, hook=hook, credit=credit,
+                       voice_delay=0.0, caption_y=caption_y, credit_at="x=(W-w)/2:y=1700", extra=extra)
 
 
 # --------------------------------------------------------------------------- Original Reels
@@ -626,6 +735,21 @@ def render_original(plan: dict, out_path: Path) -> Path:
             [(s.get("say") or s.get("line", ""), s.get("show") or s.get("line", "")) for s in scenes],
             work / "voice.wav",
         ))
+        if not stock_provider():
+            # No stock key: our own moving background with a big headline per line.
+            total = spoken[-1].end + 0.8
+            body = brand_background(total, work / "body.mp4", _seed(str(plan.get("topic", ""))))
+            extra = []
+            for index, cue in enumerate(spoken):
+                end = spoken[index + 1].start if index + 1 < len(spoken) else total
+                big = clean_text(scenes[index].get("big", ""))
+                if big and not _DEVANAGARI.search(big):  # Pillow cannot join Hindi letters
+                    png = text_image(work / f"big{index}.png", big.upper(), 110, fill=(255, 214, 0, 255),
+                                     stroke=8, max_width=960)
+                    extra.append((png, f"x=(W-w)/2:y=520:enable='between(t,{cue.start:.3f},{end:.3f})'"))
+            return compose(body, work / "voice.wav", spoken, out_path, work, hook=plan.get("hook", ""),
+                           voice_delay=0.0, keep_source_audio=False, extra=extra,
+                           caption_y=lambda _t: (900, 88))
         parts: list[Path] = []
         for index, cue in enumerate(spoken):
             end = spoken[index + 1].start if index + 1 < len(spoken) else cue.end + 0.6
