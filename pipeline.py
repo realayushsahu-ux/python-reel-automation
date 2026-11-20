@@ -824,16 +824,13 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
         "text": (
             f"These are {len(frames)} frames, in order, from a {duration:.0f}-second video made by another "
             f"creator{by}; each frame is labelled with its time. You run a desi commentary account. The Reel "
-            "plays like this: your voice opens it and sets up the story, then only about 7 seconds around "
-            "the key moment play with their own sound while you drop short reactions, and your voice "
-            "closes it. Your commentary is the main content, so make it worth watching.\n"
+            "plays like this: your voice opens it, the clip plays with its own sound while you drop short "
+            "reactions at the key moments, and your voice closes it.\n"
             "Return JSON with:\n"
             "- caption: 1-2 natural sentences for the post, no hashtags\n"
             "- hashtags: 3 to 5 relevant hashtags in one space-separated string\n"
             "- hook: on-screen title, at most 7 words, no emoji, no hashtags\n"
             '- voice: "male" or "female", whichever narrator makes this clip funnier\n'
-            "- key_moment: seconds into the clip of the single funniest or most surprising moment (the "
-            "Reel shows only a few seconds around it, so the intro must not need the rest)\n"
             "- children_present: true if any child is visible\n"
             "- someone_hurt: true if anyone looks genuinely injured or it is a serious accident\n"
             '- intro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total. Tell what '
@@ -904,10 +901,6 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
     if not caption or not outro:
         raise RuntimeError("AI returned an empty caption or ending")
     voice = str(result.get("voice", "")).strip().lower()
-    try:
-        key_moment = min(max(0.0, float(result.get("key_moment"))), duration)
-    except (TypeError, ValueError):
-        key_moment = reactions[0][0] if reactions else None
     return {
         "caption": f"{caption}\n\n{credit_line(creator)}",
         "hashtags": str(result.get("hashtags", "")).strip(),
@@ -916,7 +909,6 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
         "reactions": reactions,
         "outro": outro,
         "voice": voice if voice in {"male", "female"} else "",
-        "key_moment": key_moment,
         "kids": kids,
         "terms": [e["term"] for _m, line in reactions for e in terms_in(line[1])]
                  + [e["term"] for line in intro + outro for e in terms_in(line[1])],
@@ -934,8 +926,9 @@ def parse_slots(value: str) -> tuple[tuple[int, int], ...]:
 
 
 def original_slots() -> tuple[tuple[int, int], ...]:
-    """Daily times kept for original Reels: stock footage with a Pexels or Pixabay key,
-    otherwise our own animated background with big headlines. Set ORIGINAL_SLOTS empty to stop."""
+    """Daily times kept for original Reels (needs a free Pexels or Pixabay key for stock footage)."""
+    if not reelmaker.stock_provider():
+        return ()
     return parse_slots(setting("ORIGINAL_SLOTS", "11:00,22:00"))
 
 
@@ -1003,7 +996,7 @@ def analyze_converted_videos(tabs: dict[str, Any]) -> tuple[int, int]:
             ready_path = destination
             reelmaker.render_commentary(path, draft["intro"], draft["outro"], destination,
                                         hook=draft["hook"], credit=creator,
-                                        reactions=draft["reactions"], voice=draft["voice"], key_moment=draft.get("key_moment"))
+                                        reactions=draft["reactions"], voice=draft["voice"])
             remember_terms(draft["terms"])
             slot = next_publish_slot(occupied, commentary_slots())
             ready_record = {
@@ -1117,7 +1110,7 @@ def rerender_queue(skip_newer_than: datetime | None = None) -> tuple[int, int]:
             destination = ROOT / "media" / "ready_to_post" / f"{job_id}-{int(time.time())}.mp4"
             reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
                                         hook=draft["hook"], credit=creator,
-                                        reactions=draft["reactions"], voice=draft["voice"], key_moment=draft.get("key_moment"))
+                                        reactions=draft["reactions"], voice=draft["voice"])
             current = next((n for n, r in records(ready_ws) if r.get("job_id") == job_id
                             and r.get("status", "").strip().upper() == "SCHEDULED"), None)
             if current is None:  # posted or rejected meanwhile
@@ -1178,7 +1171,7 @@ def upgrade_raw_ready_rows(tabs: dict[str, Any]) -> int:
             destination = source.with_name(f"{job_id}-commentary.mp4")
             reelmaker.render_commentary(source, draft["intro"], draft["outro"], destination,
                                         hook=draft["hook"], credit=creator,
-                                        reactions=draft["reactions"], voice=draft["voice"], key_moment=draft.get("key_moment"))
+                                        reactions=draft["reactions"], voice=draft["voice"])
             remember_terms(draft["terms"])
             update_record(
                 ready_ws, row_number, video_file=str(destination.relative_to(ROOT)),
@@ -1212,9 +1205,7 @@ def plan_original(client: OpenAI, recent_topics: list[str]) -> dict[str, Any]:
             "- caption: 1-2 sentences for the post, no hashtags\n"
             "- hashtags: 3 to 5 hashtags in one space-separated string\n"
             '- scenes: 5 to 7 items, each {"say", "show": one spoken sentence of 8-18 words, "search": a '
-            '2-4 word English stock-footage search that shows that sentence literally, "big": a 1-4 word '
-            "punchy on-screen headline written ONLY in English letters (Hinglish), never Devanagari, "
-            'e.g. "CUBE POTTY!"}\n'
+            "2-4 word English stock-footage search that shows that sentence literally}\n"
             "The first sentence is a strong hook and the last asks viewers a question. Use only well-known, "
             "true facts and no made-up numbers. No emoji. Keep search terms in English.\n"
             f"{language_rules()}\n{slang_rules(slang_level(), recent_terms())}"
@@ -1348,7 +1339,7 @@ def main() -> None:
         draft = draft_from_video(source, args.creator)
         out = reelmaker.render_commentary(
             source, draft["intro"], draft["outro"], ROOT / "media" / "preview" / f"{source.stem}-commentary.mp4",
-            hook=draft["hook"], credit=args.creator, reactions=draft["reactions"], voice=draft["voice"], key_moment=draft.get("key_moment"),
+            hook=draft["hook"], credit=args.creator, reactions=draft["reactions"], voice=draft["voice"],
         )
         shown = {"hook": draft["hook"], "voice": draft["voice"], "kids": draft["kids"], "terms": draft["terms"],
                  "reactions": [f"{t:.1f}s {line[1]}" for t, line in draft["reactions"]],
