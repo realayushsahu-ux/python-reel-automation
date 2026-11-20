@@ -1,6 +1,6 @@
 {
   "pack_name": "ReelFlow AI - Hindi/Hinglish Reaction Vocabulary",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "language": "hi-Latn",
   "purpose": "A selectable vocabulary bank for context-aware, funny Hindi/Hinglish reaction commentary. This is not a script of fixed commentary lines.",
   "important_notes": [
@@ -39,7 +39,11 @@
       ],
       "tone": "casual",
       "meaning": "Hey bro / wait what",
-      "regional_note": "pan-Indian Hinglish"
+      "regional_note": "pan-Indian Hinglish",
+      "line": {
+        "show": "Arey bhai!",
+        "say": "अरे भाई!"
+      }
     },
     {
       "term": "kya scene hai",
@@ -49,7 +53,11 @@
         "surprise"
       ],
       "tone": "curious",
-      "meaning": "What's going on"
+      "meaning": "What's going on",
+      "line": {
+        "show": "Kya scene hai yaar!",
+        "say": "क्या सीन है यार!"
+      }
     },
     {
       "term": "kya bakwaas hai",
@@ -60,7 +68,11 @@
         "fail"
       ],
       "tone": "disapproval",
-      "meaning": "What nonsense"
+      "meaning": "What nonsense",
+      "line": {
+        "show": "Kya bakwaas hai yaar!",
+        "say": "क्या बकवास है यार!"
+      }
     },
     {
       "term": "bawal",
@@ -71,7 +83,11 @@
         "big_moment"
       ],
       "tone": "dramatic",
-      "meaning": "Chaos / spectacle"
+      "meaning": "Chaos / spectacle",
+      "line": {
+        "show": "Bawal macha diya!",
+        "say": "बवाल मचा दिया!"
+      }
     },
     {
       "term": "gaand phat gayi",
@@ -83,7 +99,11 @@
       ],
       "tone": "dramatic",
       "meaning": "That was terrifying / shocking",
-      "note": "Crude phrase; use sparingly"
+      "note": "Crude phrase; use sparingly",
+      "line": {
+        "show": "Gaand phat gayi meri toh!",
+        "say": "गांड फट गई मेरी तो!"
+      }
     },
     {
       "term": "chutiyapa",
@@ -95,7 +115,11 @@
       ],
       "tone": "sarcastic",
       "meaning": "Stupid nonsense / foolish behavior",
-      "note": "Explicit profanity"
+      "note": "Explicit profanity",
+      "line": {
+        "show": "Kya chutiyapa hai!",
+        "say": "क्या चूतियापा है!"
+      }
     },
     {
       "term": "chutiya",
@@ -106,7 +130,11 @@
       ],
       "tone": "insulting",
       "meaning": "Idiot",
-      "note": "Targets a person; prefer describing the action instead"
+      "note": "Targets a person; prefer describing the action instead",
+      "line": {
+        "show": "Chutiya scene!",
+        "say": "चूतिया सीन!"
+      }
     },
     {
       "term": "bakchodi",
@@ -117,7 +145,11 @@
         "silly_behavior"
       ],
       "tone": "playful_sarcastic",
-      "meaning": "Silly nonsense / messing around"
+      "meaning": "Silly nonsense / messing around",
+      "line": {
+        "show": "Poori bakchodi chal rahi hai!",
+        "say": "पूरी बकचोदी चल रही है!"
+      }
     },
     {
       "term": "bhenchod",
@@ -129,7 +161,11 @@
       ],
       "tone": "high_intensity",
       "meaning": "Explicit Hindi profanity",
-      "note": "Use only when strong mode is explicitly enabled"
+      "note": "Use only when strong mode is explicitly enabled",
+      "line": {
+        "show": "Bhenchod!",
+        "say": "भेनचोद!"
+      }
     },
     {
       "term": "madarchod",
@@ -141,7 +177,11 @@
       ],
       "tone": "high_intensity",
       "meaning": "Explicit Hindi profanity",
-      "note": "Use only when strong mode is explicitly enabled"
+      "note": "Use only when strong mode is explicitly enabled",
+      "line": {
+        "show": "Madarchod!",
+        "say": "मादरचोद!"
+      }
     },
     {
       "term": "gaand(u)",
@@ -152,7 +192,11 @@
       ],
       "tone": "insulting",
       "meaning": "Crude insult",
-      "note": "Avoid targeting a real person"
+      "note": "Avoid targeting a real person",
+      "line": {
+        "show": "Gaandu move!",
+        "say": "गांडू मूव!"
+      }
     },
     {
       "term": "lodu",
@@ -163,7 +207,11 @@
         "bad_decision"
       ],
       "tone": "teasing",
-      "meaning": "Crude insult; roughly fool"
+      "meaning": "Crude insult; roughly fool",
+      "line": {
+        "show": "Kya lodu move tha!",
+        "say": "क्या लोडू मूव था!"
+      }
     },
     {
       "term": "harami",
@@ -173,7 +221,11 @@
         "cheeky_action"
       ],
       "tone": "teasing",
-      "meaning": "Rascal / cheeky person"
+      "meaning": "Rascal / cheeky person",
+      "line": {
+        "show": "Harami kahin ka!",
+        "say": "हरामी कहीं का!"
+      }
     },
     {
       "term": "kamina",
@@ -184,7 +236,11 @@
         "unexpected"
       ],
       "tone": "teasing",
-      "meaning": "Rascal / sneaky person"
+      "meaning": "Rascal / sneaky person",
+      "line": {
+        "show": "Kamina kahin ka!",
+        "say": "कमीना कहीं का!"
+      }
     },
     {
       "term": "ullu ka pattha",
@@ -194,7 +250,11 @@
         "confusion"
       ],
       "tone": "comic",
-      "meaning": "Silly fool"
+      "meaning": "Silly fool",
+      "line": {
+        "show": "Ullu ka pattha nikla!",
+        "say": "उल्लू का पट्ठा निकला!"
+      }
     },
     {
       "term": "akal ke dushman",
@@ -204,7 +264,11 @@
         "reckless_action"
       ],
       "tone": "sarcastic",
-      "meaning": "Enemy of common sense"
+      "meaning": "Enemy of common sense",
+      "line": {
+        "show": "Akal ke dushman!",
+        "say": "अक्ल के दुश्मन!"
+      }
     },
     {
       "term": "hadd hai yaar",
@@ -215,7 +279,11 @@
         "absurdity"
       ],
       "tone": "exasperated",
-      "meaning": "This is too much"
+      "meaning": "This is too much",
+      "line": {
+        "show": "Hadd hai yaar!",
+        "say": "हद है यार!"
+      }
     },
     {
       "term": "bhai kya kar raha hai",
@@ -225,7 +293,11 @@
         "confusion"
       ],
       "tone": "disbelief",
-      "meaning": "Bro, what are you doing"
+      "meaning": "Bro, what are you doing",
+      "line": {
+        "show": "Bhai kya kar raha hai!",
+        "say": "भाई क्या कर रहा है!"
+      }
     },
     {
       "term": "yeh kya bakchodi hai",
@@ -236,7 +308,11 @@
         "unexpected"
       ],
       "tone": "sarcastic",
-      "meaning": "What is this nonsense"
+      "meaning": "What is this nonsense",
+      "line": {
+        "show": "Yeh kya bakchodi hai!",
+        "say": "ये क्या बकचोदी है!"
+      }
     },
     {
       "term": "kya bawasir hai",
@@ -247,7 +323,11 @@
         "fail"
       ],
       "tone": "comic",
-      "meaning": "What ridiculous nonsense"
+      "meaning": "What ridiculous nonsense",
+      "line": {
+        "show": "Kya bawasir hai ye!",
+        "say": "क्या बवासीर है ये!"
+      }
     },
     {
       "term": "full beizzati",
@@ -257,7 +337,11 @@
         "embarrassment"
       ],
       "tone": "mocking",
-      "meaning": "Total embarrassment"
+      "meaning": "Total embarrassment",
+      "line": {
+        "show": "Full beizzati ho gayi!",
+        "say": "फुल बेइज़्ज़ती हो गई!"
+      }
     },
     {
       "term": "izzat ka falooda",
@@ -267,7 +351,11 @@
         "embarrassment"
       ],
       "tone": "comic",
-      "meaning": "Reputation completely ruined"
+      "meaning": "Reputation completely ruined",
+      "line": {
+        "show": "Izzat ka falooda!",
+        "say": "इज़्ज़त का फालूदा!"
+      }
     },
     {
       "term": "aukaat dikha di",
@@ -277,7 +365,11 @@
         "unexpected_loss"
       ],
       "tone": "dramatic",
-      "meaning": "Got humbled"
+      "meaning": "Got humbled",
+      "line": {
+        "show": "Aukaat dikha di!",
+        "say": "औकात दिखा दी!"
+      }
     },
     {
       "term": "system hang ho gaya",
@@ -288,7 +380,11 @@
         "freeze"
       ],
       "tone": "tech_comedy",
-      "meaning": "The system froze"
+      "meaning": "The system froze",
+      "line": {
+        "show": "System hang ho gaya!",
+        "say": "सिस्टम हैंग हो गया!"
+      }
     },
     {
       "term": "dimaag ka dahi",
@@ -298,7 +394,11 @@
         "chaos"
       ],
       "tone": "comic",
-      "meaning": "Brain turned to yogurt / total confusion"
+      "meaning": "Brain turned to yogurt / total confusion",
+      "line": {
+        "show": "Dimaag ka dahi ho gaya!",
+        "say": "दिमाग का दही हो गया!"
+      }
     },
     {
       "term": "yeh toh alag level hai",
@@ -309,7 +409,499 @@
         "chaos"
       ],
       "tone": "dramatic",
-      "meaning": "This is another level"
+      "meaning": "This is another level",
+      "line": {
+        "show": "Yeh toh alag level hai!",
+        "say": "ये तो अलग लेवल है!"
+      }
+    },
+    {
+      "term": "bewakoof",
+      "intensity": "mild",
+      "tags": [
+        "silly_mistake",
+        "bad_decision"
+      ],
+      "tone": "comic",
+      "meaning": "Idiot / foolish",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Kya bewakoofi hai!",
+        "say": "क्या बेवकूफी है!"
+      }
+    },
+    {
+      "term": "dhakkan",
+      "intensity": "mild",
+      "tags": [
+        "silly_mistake",
+        "confusion"
+      ],
+      "tone": "comic",
+      "meaning": "Dimwit",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Poora dhakkan nikla!",
+        "say": "पूरा ढक्कन निकला!"
+      }
+    },
+    {
+      "term": "namoona",
+      "intensity": "mild",
+      "tags": [
+        "absurdity",
+        "silly_behavior"
+      ],
+      "tone": "comic",
+      "meaning": "A real specimen",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Ye alag hi namoona hai!",
+        "say": "ये अलग ही नमूना है!"
+      }
+    },
+    {
+      "term": "nalayak",
+      "intensity": "mild",
+      "tags": [
+        "fail",
+        "silly_mistake"
+      ],
+      "tone": "comic",
+      "meaning": "Useless fellow",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Nalayak kahin ka!",
+        "say": "नालायक कहीं का!"
+      }
+    },
+    {
+      "term": "nikamma",
+      "intensity": "mild",
+      "tags": [
+        "fail",
+        "failure"
+      ],
+      "tone": "comic",
+      "meaning": "Good for nothing",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Ekdum nikamma nikla!",
+        "say": "एकदम निकम्मा निकला!"
+      }
+    },
+    {
+      "term": "bhondu",
+      "intensity": "mild",
+      "tags": [
+        "silly_mistake",
+        "confusion"
+      ],
+      "tone": "comic",
+      "meaning": "Clumsy fool",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bhondu ban gaya bechara!",
+        "say": "भोंदू बन गया बेचारा!"
+      }
+    },
+    {
+      "term": "phattu",
+      "intensity": "mild",
+      "tags": [
+        "shock",
+        "near_miss",
+        "fail"
+      ],
+      "tone": "comic",
+      "meaning": "Scaredy-cat",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Phattu nikla bhai!",
+        "say": "फट्टू निकला भाई!"
+      }
+    },
+    {
+      "term": "baklol",
+      "intensity": "mild",
+      "tags": [
+        "nonsense",
+        "silly_behavior"
+      ],
+      "tone": "comic",
+      "meaning": "Nonsense-talker",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Kya baklol hai yaar!",
+        "say": "क्या बकलोल है यार!"
+      }
+    },
+    {
+      "term": "saala",
+      "intensity": "mild",
+      "tags": [
+        "shock",
+        "unexpected",
+        "mischief"
+      ],
+      "tone": "comic",
+      "meaning": "Damn (exclamation)",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Saala kya scene hai!",
+        "say": "साला क्या सीन है!"
+      }
+    },
+    {
+      "term": "gadha",
+      "intensity": "mild",
+      "tags": [
+        "silly_mistake",
+        "bad_decision"
+      ],
+      "tone": "comic",
+      "meaning": "Donkey / dumb",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Gadha hai kya bhai!",
+        "say": "गधा है क्या भाई!"
+      }
+    },
+    {
+      "term": "haramkhor",
+      "intensity": "medium",
+      "tags": [
+        "mischief",
+        "cheeky_action"
+      ],
+      "tone": "comic",
+      "meaning": "Sly rascal",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Haramkhor ne kya kiya!",
+        "say": "हरामखोर ने क्या किया!"
+      }
+    },
+    {
+      "term": "chaalu",
+      "intensity": "mild",
+      "tags": [
+        "mischief",
+        "cheeky_action"
+      ],
+      "tone": "comic",
+      "meaning": "Crafty",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bada chaalu nikla!",
+        "say": "बड़ा चालू निकला!"
+      }
+    },
+    {
+      "term": "luchcha",
+      "intensity": "medium",
+      "tags": [
+        "mischief",
+        "cheeky_action"
+      ],
+      "tone": "comic",
+      "meaning": "Rogue",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Luchcha kahin ka!",
+        "say": "लुच्चा कहीं का!"
+      }
+    },
+    {
+      "term": "besharam",
+      "intensity": "mild",
+      "tags": [
+        "mischief",
+        "embarrassment"
+      ],
+      "tone": "comic",
+      "meaning": "Shameless",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Besharam ko sharam bhi nahi!",
+        "say": "बेशरम को शरम भी नहीं!"
+      }
+    },
+    {
+      "term": "nautankibaaz",
+      "intensity": "mild",
+      "tags": [
+        "silly_behavior",
+        "absurdity"
+      ],
+      "tone": "comic",
+      "meaning": "Drama queen",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Poora nautankibaaz hai!",
+        "say": "पूरा नौटंकीबाज़ है!"
+      }
+    },
+    {
+      "term": "bhaad mein ja",
+      "intensity": "mild",
+      "tags": [
+        "anger",
+        "fail"
+      ],
+      "tone": "comic",
+      "meaning": "Go to hell",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bhaad mein ja bhai!",
+        "say": "भाड़ में जा भाई!"
+      }
+    },
+    {
+      "term": "aisi ki taisi",
+      "intensity": "mild",
+      "tags": [
+        "fail",
+        "chaos"
+      ],
+      "tone": "comic",
+      "meaning": "Ruined it",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Aisi ki taisi ho gayi!",
+        "say": "ऐसी की तैसी हो गई!"
+      }
+    },
+    {
+      "term": "bakchod",
+      "intensity": "medium",
+      "tags": [
+        "nonsense",
+        "silly_behavior"
+      ],
+      "tone": "comic",
+      "meaning": "Nonsense-maker",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Ekdum bakchod banda hai!",
+        "say": "एकदम बकचोद बंदा है!"
+      }
+    },
+    {
+      "term": "laude lag gaye",
+      "intensity": "medium",
+      "tags": [
+        "fail",
+        "unexpected_loss",
+        "big_moment"
+      ],
+      "tone": "comic",
+      "meaning": "Totally screwed",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bhai ke toh laude lag gaye!",
+        "say": "भाई के तो लौड़े लग गए!"
+      }
+    },
+    {
+      "term": "jhaant barabar",
+      "intensity": "strong",
+      "tags": [
+        "fail",
+        "silly_mistake"
+      ],
+      "tone": "comic",
+      "meaning": "Worth nothing",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Jhaant barabar kaam kiya!",
+        "say": "झांट बराबर काम किया!"
+      }
+    },
+    {
+      "term": "gaand marwa li",
+      "intensity": "strong",
+      "tags": [
+        "fail",
+        "bad_decision",
+        "reckless_action"
+      ],
+      "tone": "comic",
+      "meaning": "Screwed himself over",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Khud ki gaand marwa li!",
+        "say": "खुद की गांड मरवा ली!"
+      }
+    },
+    {
+      "term": "bhosdi ka scene",
+      "intensity": "strong",
+      "tags": [
+        "chaos",
+        "absurdity",
+        "unexpected"
+      ],
+      "tone": "comic",
+      "meaning": "What a f***ed-up scene",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Kya bhosdi ka scene hai!",
+        "say": "क्या भोसड़ी का सीन है!"
+      }
+    },
+    {
+      "term": "tatti",
+      "intensity": "medium",
+      "tags": [
+        "fail",
+        "nonsense"
+      ],
+      "tone": "comic",
+      "meaning": "Crap",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Ekdum tatti move!",
+        "say": "एकदम टट्टी मूव!"
+      }
+    },
+    {
+      "term": "moot diya",
+      "intensity": "strong",
+      "tags": [
+        "shock",
+        "near_miss"
+      ],
+      "tone": "comic",
+      "meaning": "Pissed himself",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Darr ke maare moot diya!",
+        "say": "डर के मारे मूत दिया!"
+      }
+    },
+    {
+      "term": "chodu",
+      "intensity": "strong",
+      "tags": [
+        "silly_mistake",
+        "bad_decision"
+      ],
+      "tone": "comic",
+      "meaning": "Idiot (crude)",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Kya chodu move tha!",
+        "say": "क्या चोदू मूव था!"
+      }
+    },
+    {
+      "term": "iski toh lag gayi",
+      "intensity": "mild",
+      "tags": [
+        "fail",
+        "unexpected_loss"
+      ],
+      "tone": "comic",
+      "meaning": "He's done for",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Iski toh lag gayi!",
+        "say": "इसकी तो लग गई!"
+      }
+    },
+    {
+      "term": "satyanash",
+      "intensity": "clean",
+      "tags": [
+        "chaos",
+        "fail",
+        "big_moment"
+      ],
+      "tone": "comic",
+      "meaning": "Total ruin",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Poora satyanash kar diya!",
+        "say": "पूरा सत्यानाश कर दिया!"
+      }
+    },
+    {
+      "term": "akal ghaas charne gayi",
+      "intensity": "mild",
+      "tags": [
+        "bad_decision",
+        "silly_mistake"
+      ],
+      "tone": "comic",
+      "meaning": "Brain went grazing",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Iski akal ghaas charne gayi hai kya?",
+        "say": "इसकी अक्ल घास चरने गई है क्या?"
+      }
+    },
+    {
+      "term": "tu rehne de",
+      "intensity": "clean",
+      "tags": [
+        "fail",
+        "public_fail"
+      ],
+      "tone": "comic",
+      "meaning": "Just give up",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bhai, tu rehne de!",
+        "say": "भाई, तू रहने दे!"
+      }
+    },
+    {
+      "term": "dimaag hil gaya",
+      "intensity": "clean",
+      "tags": [
+        "shock",
+        "unexpected",
+        "impressive"
+      ],
+      "tone": "comic",
+      "meaning": "Mind blown",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Ye dekh ke dimaag hil gaya!",
+        "say": "ये देख के दिमाग हिल गया!"
+      }
+    },
+    {
+      "term": "tabahi macha di",
+      "intensity": "clean",
+      "tags": [
+        "chaos",
+        "explosion",
+        "big_moment"
+      ],
+      "tone": "comic",
+      "meaning": "Total chaos",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Poori tabahi macha di!",
+        "say": "पूरी तबाही मचा दी!"
+      }
+    },
+    {
+      "term": "sambhal ja",
+      "intensity": "clean",
+      "tags": [
+        "near_miss",
+        "reckless_action"
+      ],
+      "tone": "comic",
+      "meaning": "Careful!",
+      "note": "From the Hindi gaali dictionary; react to the action, not the person",
+      "line": {
+        "show": "Bhai, sambhal ja!",
+        "say": "भाई, संभल जा!"
+      }
     }
   ],
   "scene_tag_map": {

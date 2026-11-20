@@ -613,7 +613,7 @@ def ai_client() -> OpenAI:
         raise RuntimeError("Set AI_API_KEY in .env")
     # A failed request is not billed, so retrying a slow moment costs nothing extra.
     return OpenAI(api_key=api_key, base_url=setting("AI_BASE_URL", "https://api.openai.com/v1"),
-                  timeout=float(setting("AI_TIMEOUT_SECONDS", "90") or 90), max_retries=3)
+                  timeout=float(setting("AI_TIMEOUT_SECONDS", "180") or 180), max_retries=3)
 
 
 def ask_json(client: OpenAI, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -783,6 +783,24 @@ def vet_line(line: tuple[str, str], level: str, used: list[str], kids: bool,
     return line
 
 
+def pick_gaali(scene_tags: list[str], recent: list[str]) -> dict[str, Any] | None:
+    """A non-clean vocabulary term with a ready spoken line, matched to the scene's tags and
+    not used in recent Reels; random among the best matches so it keeps varying."""
+    import random
+
+    tag_map = load_vocabulary().get("scene_tag_map", {})
+    wanted = {t for tag in scene_tags for t in tag_map.get(tag, [tag])}
+    # At medium or strong, "kya bakwaas hai" is not a real gaali: pick medium or above.
+    floor = "medium" if INTENSITIES.index(slang_level()) >= INTENSITIES.index("medium") else "mild"
+    candidates = [v for v in allowed_vocabulary(slang_level())
+                  if INTENSITIES.index(v.get("intensity", "clean")) >= INTENSITIES.index(floor)
+                  and v.get("line") and v["term"].lower() not in recent]
+    if not candidates:
+        return None
+    best = max(len(wanted & set(v.get("tags", []))) for v in candidates)
+    return random.choice([v for v in candidates if len(wanted & set(v.get("tags", []))) == best])
+
+
 def credit_line(creator: str) -> str:
     creator = creator.strip().lstrip("@")
     return f"\U0001F3A5 Credit: @{creator}" if creator else "\U0001F3A5 Credit: original creator"
@@ -814,6 +832,7 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
             "- hook: on-screen title, at most 7 words, no emoji, no hashtags\n"
             '- voice: "male" or "female", whichever narrator makes this clip funnier\n'
             "- children_present: true if any child is visible\n"
+            "- someone_hurt: true if anyone looks genuinely injured or it is a serious accident\n"
             '- intro: 1 or 2 spoken sentences as {"say", "show"} objects, 10-20 words in total. Tell what '
             "this video is about with curiosity and energy, but do NOT reveal the ending or punchline.\n"
             f'- reactions: 0 to {max_reactions} items {{"t": seconds, "scene_tag", "term", "confidence", '
@@ -840,7 +859,8 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
         {"role": "system", "content": "You write short, accurate, original, funny commentary for vertical videos."},
         {"role": "user", "content": content},
     ])
-    kids = bool(result.get("children_present"))
+    # Children on screen, or someone really hurt: no gaali at all, only clean reactions.
+    kids = bool(result.get("children_present")) or bool(result.get("someone_hurt"))
     recent = [t.lower() for t in avoid]
     used: list[str] = []  # non-clean terms this Reel has used so far
     fallback = ("अरे भाई... ये देखो!", "Arre bhai... ye dekho!") if reelmaker.is_hindi() else ("Wait for it...",) * 2
@@ -862,6 +882,21 @@ def draft_from_video(video_path: Path, creator: str = "") -> dict[str, Any]:
         if line:
             reactions.append((moment, line))
     outro = [line for line in (vet_line(x, level, used, kids, recent) for x in script_lines(result.get("outro"))) if line]
+    real_gaali = [t for t in used if INTENSITIES.index(
+        next((v["intensity"] for v in load_vocabulary().get("vocabulary", []) if v["term"].lower() == t), "mild"))
+        >= INTENSITIES.index("medium")]
+    wants_real = INTENSITIES.index(level) >= INTENSITIES.index("medium")
+    if (not used or (wants_real and not real_gaali)) and not kids and level != "clean" and reelmaker.is_hindi():
+        # The AI often plays safe; add one subtle gaali that fits the scene, at the funny moment.
+        scene_tags = [str(item.get("scene_tag", "")) for item in (result.get("reactions") or []) if isinstance(item, dict)]
+        extra = pick_gaali(scene_tags, recent)
+        if extra:
+            say, show = extra["line"]["say"], extra["line"]["show"]
+            if reactions:
+                moment, (r_say, r_show) = reactions[0]
+                reactions[0] = (moment, (f"{say} {r_say}", f"{show} {r_show}"))
+            else:
+                outro.insert(0, (say, show))
     caption = str(result.get("caption", "")).strip()
     if not caption or not outro:
         raise RuntimeError("AI returned an empty caption or ending")
