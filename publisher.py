@@ -209,10 +209,17 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
     if not container_id or not upload_uri:
         raise PublishError("Meta did not return the Reel container ID and upload URL")
 
-    # Uploads fail now and then on a network or Meta hiccup; the container stays
-    # valid, so send the whole file again a few times before giving up.
+    # Uploads fail now and then on a network or Meta hiccup. A plain network error
+    # keeps the container valid, but a non-retriable Meta error (ProcessingFailedError)
+    # spoils it, so then start over with a fresh container before sending again.
     last_problem = ""
     for attempt in range(1, 4):
+        if attempt > 1 and '"retriable":false' in last_problem.replace(" ", ""):
+            container = graph_call("POST", f"{instagram_id}/media", token, data=container_data)
+            container_id = str(container.get("id", ""))
+            upload_uri = str(container.get("uri", ""))
+            if not container_id or not upload_uri:
+                raise PublishError("Meta did not return the Reel container ID and upload URL")
         try:
             with video_path.open("rb") as video:
                 upload_response = requests.post(
@@ -238,9 +245,17 @@ def publish_one(worksheet, headers: list[str], row_number: int, values: dict[str
 
     status = ""
     for _ in range(POLL_ATTEMPTS):
-        status_data = graph_call(
-            "GET", container_id, token, params={"fields": "status_code,status"}
-        )
+        # A short internet drop while waiting must not fail an already uploaded Reel.
+        try:
+            status_data = graph_call(
+                "GET", container_id, token, params={"fields": "status_code,status"}
+            )
+        except PublishError as exc:
+            if "Could not reach" not in str(exc):
+                raise
+            print(f"Row {row_number}: network blip while Meta processes the video; checking again")
+            time.sleep(POLL_SECONDS)
+            continue
         status = str(status_data.get("status_code", ""))
         if status == "FINISHED":
             break
